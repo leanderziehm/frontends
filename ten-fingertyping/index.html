@@ -79,9 +79,12 @@
     line-height: 1.6;
   }
 
-  .done {
+  /* .done {
     color: #666;
-  }
+  } */
+  .done {
+  color: #7a7a7a;
+}
 
   .current {
     background: #3a82f6;
@@ -92,24 +95,34 @@
   a{
     color:#8ab4ff;
   }
+  .wrong {
+  background: #ff4d4f;
+  color: white;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+.current {
+  background: #3a82f6;
+  color: white;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
 </style>
 <script src="./color-utils.js"></script>
+<script src="./audio-manager.js"></script>
+<script src="./sfx-engine.js"></script>
+<script src="./tts-engine.js"></script>
 </head>
 
 <body>
 
-<div id="textDisplay"></div>
-<div id="handOverlay">
-  <div id="handContainer">
-    <img id="handsBase" src="./images/hands.png"/>
-    <img id="fingerCutout" src=""/>
-  </div>
-
-</div>
-
-<div id="app">
+  <div id="app">
 
   <div id="topControls">
+    <button id="muteBtn" onclick="audioManager.toggleMute()">
+  Toggle Sound
+</button>
     <select id="savedTexts"></select>
 
     <button onclick="loadSelectedText()">
@@ -125,6 +138,17 @@
 
 </div>
 
+
+<div id="handOverlay">
+  <div id="handContainer">
+    <img id="handsBase" src="./images/hands.png"/>
+    <img id="fingerCutout" src=""/>
+  </div>
+</div>
+<div id="textDisplay"></div>
+
+
+
 <script>
 const STORAGE_KEY = "typingTrainerTexts";
 
@@ -132,17 +156,73 @@ let text = "";
 let index = 0;
 let spans = [];
 
+let typed = [];
+let mistakes = new Set();
+
+let words = [];
+let lastSpokenWordIndex = -1;
+
 const fingerMap = {
-  left_pinky: { hex:"#e93545", image:"./images/left-pinky.png", keys:["q","a","1"] },
-  left_ring_finger: { hex:"#f1a524", image:"./images/left-ring.png", keys:["w","s","2"] },
-  left_middle_finger: { hex:"#72bf7c", image:"./images/left-middle.png", keys:["e","d","3"] },
-  left_index_finger: { hex:"#07aee8", image:"./images/left-index.png", keys:["r","t","f","g","4","5"] },
-  right_index_finger: { hex:"#197295", image:"./images/right-index.png", keys:["y","u","h","j","6","7"] },
-  right_middle_finger: { hex:"#98d6f3", image:"./images/right-middle.png", keys:["i","k","8"] },
-  right_ring_finger: { hex:"#fbe9a4", image:"./images/right-ring.png", keys:["o","l","9"] },
-  right_pinky: { hex:"#a4aaa2", image:"./images/right-pinky.png", keys:["p",";","0"] },
+  left_pinky: { hex:"#e93545", image:"./images/left-pinky.png", keys:["1","!","q","a","z"] },
+  left_ring_finger: { hex:"#f1a524", image:"./images/left-ring.png", keys:["2","@","w","s","x"] },
+  left_middle_finger: { hex:"#72bf7c", image:"./images/left-middle.png", keys:["3","#","e","d","c"] },
+  left_index_finger: { hex:"#07aee8", image:"./images/left-index.png", keys:["4","$","r","f","v","5","%","t","g","b"] },
+  right_index_finger: { hex:"#197295", image:"./images/right-index.png", keys:["6","^","y","h","n","7","&","u","j","m"] },
+  right_middle_finger: { hex:"#e93545", image:"./images/right-middle.png", keys:["8","*","i","k","<",","] },
+  right_ring_finger: { hex:"#fbe9a4", image:"./images/right-ring.png", keys:["9","(","o","l",".",">"] },
+  right_pinky: { hex:"#a4aaa2", image:"./images/right-pinky.png", keys:["0",")","p",";",":","/","?","-","_","[","{","'","\"","=","+","]","}","\\","|"] },
   thumbs: { hex:"#ffffff", image:"./images/left-thumb.png", keys:[" "] }
 };
+
+
+function start(newText) {
+  text = newText;
+  index = 0;
+
+  typed = [];
+  mistakes.clear();
+
+
+  // build word map
+  words = [];
+  lastSpokenWordIndex = -1;
+
+  const regex = /\S+/g;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    words.push({
+      word: match[0],
+      start: match.index,
+      end: match.index + match[0].length
+    });
+  }
+
+  const display = document.getElementById("textDisplay");
+  display.innerHTML = "";
+
+  spans = [];
+
+  for (let i = 0; i < text.length; i++) {
+    const s = document.createElement("span");
+    s.textContent = text[i];
+    display.appendChild(s);
+    spans.push(s);
+  }
+
+  updateUI();
+}
+
+function getCurrentWordInfo(charIndex) {
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+
+    if (charIndex >= w.start && charIndex < w.end) {
+      return { ...w, index: i };
+    }
+  }
+  return null;
+}
 
 function getEntries() {
   return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
@@ -189,45 +269,108 @@ function loadRandomText() {
   start(random.text);
 }
 
-function start(newText) {
-  text = newText;
-  index = 0;
-
-  const display = document.getElementById("textDisplay");
-  display.innerHTML = "";
-
-  spans = [];
-
-  for (let i = 0; i < text.length; i++) {
-    const s = document.createElement("span");
-
-    s.textContent = text[i];
-
-    display.appendChild(s);
-
-    spans.push(s);
-  }
-
-  updateUI();
-}
-
 document.addEventListener("keydown", (e) => {
   if (!text) return;
 
-  if (index >= text.length) return;
+  // Keys we want to fully control
+  const blockedKeys = [
+    " ",
+    "Spacebar",
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+    "Backspace",
+    "Tab"
+  ];
+
+  if (blockedKeys.includes(e.key)) {
+    e.preventDefault();
+  }
+
+  // Ignore modifier keys
+  if (
+    e.key === "Shift" ||
+    e.key === "Control" ||
+    e.key === "Alt" ||
+    e.key === "Meta"
+  ) return;
+
+  // BACKSPACE
+  if (e.key === "Backspace") {
+    if (index > 0) {
+      index--;
+
+      typed[index] = null;
+      mistakes.delete(index);
+    }
+
+    updateUI();
+    return;
+  }
+
+  // Prevent finishing if mistakes exist
+  if (index >= text.length) {
+    return;
+  }
+
+  const expected = text[index];
+  const pressed = e.key;
+
+  typed[index] = pressed;
+
+  if (pressed === expected) {
+    mistakes.delete(index);
+  } else {
+    mistakes.add(index);
+    window.audioManager.error();
+  }
 
   index++;
 
   updateUI();
 });
-
 function updateUI() {
   spans.forEach((s, i) => {
-    s.className =
-      i < index
-        ? "done"
-        : (i === index ? "current" : "");
+
+    s.className = "";
+
+    // completed correct
+    if (i < index && !mistakes.has(i)) {
+      s.classList.add("done");
+    }
+
+    // wrong character
+    if (mistakes.has(i)) {
+      s.classList.add("wrong");
+    }
+    
+
+    // current cursor
+    if (i === index) {
+      s.classList.add("current");
+    }
   });
+
+    // speak current word
+  const wordInfo = getCurrentWordInfo(index);
+  console.log(wordInfo);
+
+  if (wordInfo && wordInfo.index !== lastSpokenWordIndex) {
+    lastSpokenWordIndex = wordInfo.index;
+    window.audioManager.speak(wordInfo.word);
+    console.log("seak:",wordInfo.word);
+  }
+
+
+  // Prevent completion while mistakes exist
+  const finished =
+    index >= text.length &&
+    mistakes.size === 0;
+
+  if (finished) {
+    console.log("Completed!");
+  }
 
   const currentChar = text[index] || " ";
 
@@ -236,7 +379,6 @@ function updateUI() {
   const cutout = document.getElementById("fingerCutout");
 
   if (!finger) return;
-
 
   cutout.src = finger.image;
 
@@ -247,6 +389,7 @@ function updateUI() {
 
 function getFinger(char) {
   char = char.toLowerCase();
+  console.log(char);
 
   for (const f of Object.values(fingerMap)) {
     if (f.keys.includes(char)) return f;
@@ -254,6 +397,19 @@ function getFinger(char) {
 
   return fingerMap.thumbs;
 }
+
+function syncMuteUI() {
+  const btn = document.getElementById("muteBtn");
+
+  btn.textContent =
+    audioManager.isMuted()
+      ? "Unmute"
+      : "Mute";
+}
+
+window.addEventListener("audio-mute-change", syncMuteUI);
+syncMuteUI();
+
 
 populateDropdown();
 

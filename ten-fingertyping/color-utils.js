@@ -1,6 +1,6 @@
 // utils/color.js
 
-export function hexToRgb(hex) {
+function hexToRgb(hex) {
   hex = hex.replace("#", "");
 
   return {
@@ -10,7 +10,7 @@ export function hexToRgb(hex) {
   };
 }
 
-export function colorizeWhiteImage(hex) {
+function colorizeWhiteImage(hex) {
   const { r, g, b } = hexToRgb(hex);
 
   const rNorm = r / 255;
