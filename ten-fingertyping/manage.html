@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Typing Trainer - Manage Texts</title>
+
+<style>
+  body{
+    margin:0;
+    background:#0f1115;
+    color:#e6e6e6;
+    font-family:Arial,sans-serif;
+    padding:40px;
+  }
+
+  h1{
+    margin-top:0;
+  }
+
+  textarea{
+    width:100%;
+    height:180px;
+    background:#1a1d24;
+    color:white;
+    border:1px solid #333;
+    border-radius:8px;
+    padding:12px;
+    box-sizing:border-box;
+    margin-bottom:12px;
+  }
+
+  button{
+    padding:10px 16px;
+    border:none;
+    border-radius:6px;
+    cursor:pointer;
+    background:#3a82f6;
+    color:white;
+    margin-right:8px;
+  }
+
+  .danger{
+    background:#d64545;
+  }
+
+  .secondary{
+    background:#444;
+  }
+
+  .entry{
+    background:#1a1d24;
+    border:1px solid #333;
+    padding:16px;
+    border-radius:10px;
+    margin-top:16px;
+  }
+
+  .preview{
+    white-space:pre-wrap;
+    color:#bbb;
+    margin-bottom:12px;
+    max-height:120px;
+    overflow:hidden;
+  }
+
+  .topbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:20px;
+  }
+
+  a{
+    color:#8ab4ff;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Manage Typing Texts</h1>
+  <a href="./index.html">Open Trainer</a>
+</div>
+
+<textarea id="textInput" placeholder="Paste typing text here..."></textarea>
+
+<div>
+  <button onclick="saveEntry()">Save Text</button>
+  <button class="secondary" onclick="clearEditor()">Clear</button>
+</div>
+
+<h2>Saved Texts</h2>
+
+<div id="entries"></div>
+
+<script>
+const STORAGE_KEY = "typingTrainerTexts";
+
+let editingId = null;
+
+function getEntries() {
+  return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+}
+
+function saveEntries(entries) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+}
+
+function renderEntries() {
+  const container = document.getElementById("entries");
+  container.innerHTML = "";
+
+  const entries = getEntries();
+
+  if (entries.length === 0) {
+    container.innerHTML = "<p>No saved texts yet.</p>";
+    return;
+  }
+
+  entries.forEach(entry => {
+    const div = document.createElement("div");
+    div.className = "entry";
+
+    div.innerHTML = `
+      <div class="preview">${escapeHtml(entry.text.substring(0, 400))}</div>
+
+      <button onclick="editEntry('${entry.id}')">Edit</button>
+      <button class="danger" onclick="deleteEntry('${entry.id}')">Delete</button>
+    `;
+
+    container.appendChild(div);
+  });
+}
+
+function saveEntry() {
+  const textarea = document.getElementById("textInput");
+  const text = textarea.value.trim();
+
+  if (!text) {
+    alert("Enter some text first.");
+    return;
+  }
+
+  const entries = getEntries();
+
+  if (editingId) {
+    const entry = entries.find(e => e.id === editingId);
+
+    if (entry) {
+      entry.text = text;
+    }
+
+    editingId = null;
+  } else {
+    entries.unshift({
+      id: crypto.randomUUID(),
+      text,
+      createdAt: Date.now()
+    });
+  }
+
+  saveEntries(entries);
+
+  textarea.value = "";
+
+  renderEntries();
+}
+
+function editEntry(id) {
+  const entries = getEntries();
+  const entry = entries.find(e => e.id === id);
+
+  if (!entry) return;
+
+  editingId = id;
+
+  document.getElementById("textInput").value = entry.text;
+
+  window.scrollTo({
+    top: 0,
+    behavior: "smooth"
+  });
+}
+
+function deleteEntry(id) {
+  const entries = getEntries().filter(e => e.id !== id);
+
+  saveEntries(entries);
+
+  renderEntries();
+}
+
+function clearEditor() {
+  editingId = null;
+  document.getElementById("textInput").value = "";
+}
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+renderEntries();
+</script>
+
+</body>
+</html>
