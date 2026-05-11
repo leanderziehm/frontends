@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quiz App</title>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Inter, system-ui, sans-serif;
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      color: white;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+    }
+
+    .quiz-container {
+      width: 100%;
+      max-width: 760px;
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 24px;
+      padding: 32px;
+      box-shadow:
+        0 10px 30px rgba(0,0,0,0.35),
+        inset 0 1px 0 rgba(255,255,255,0.08);
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 28px;
+    }
+
+    .progress-section {
+      flex: 1;
+      min-width: 220px;
+    }
+
+    .progress-text {
+      margin-bottom: 10px;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.08);
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #38bdf8, #6366f1);
+      transition: width 0.3s ease;
+    }
+
+    .reset-btn {
+      background: rgba(255,255,255,0.08);
+      color: white;
+      border: none;
+      padding: 12px 18px;
+      border-radius: 14px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: 0.2s ease;
+    }
+
+    .reset-btn:hover {
+      background: rgba(255,255,255,0.14);
+    }
+
+    .question-number {
+      font-size: 13px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #93c5fd;
+      margin-bottom: 14px;
+    }
+
+    .question {
+      font-size: 30px;
+      line-height: 1.4;
+      margin-bottom: 28px;
+      font-weight: 700;
+    }
+
+    .options {
+      display: grid;
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+
+    .option {
+      padding: 18px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.05);
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: 0.2s ease;
+      user-select: none;
+    }
+
+    .option:hover {
+      background: rgba(255,255,255,0.1);
+      transform: translateY(-1px);
+    }
+
+    .option.selected {
+      border-color: #60a5fa;
+      background: rgba(96,165,250,0.16);
+    }
+
+    .option.correct {
+      border-color: #22c55e;
+      background: rgba(34,197,94,0.16);
+    }
+
+    .option.wrong {
+      border-color: #ef4444;
+      background: rgba(239,68,68,0.16);
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    button.action-btn {
+      border: none;
+      border-radius: 14px;
+      padding: 14px 20px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 700;
+      transition: 0.2s ease;
+      color: white;
+    }
+
+    .confirm-btn {
+      background: linear-gradient(90deg, #3b82f6, #6366f1);
+    }
+
+    .retry-btn {
+      background: rgba(255,255,255,0.12);
+    }
+
+    button.action-btn:hover {
+      transform: translateY(-1px);
+      opacity: 0.95;
+    }
+
+    .message {
+      min-height: 24px;
+      margin-top: 18px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .success-screen {
+      text-align: center;
+      padding: 40px 10px;
+    }
+
+    .success-screen h1 {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    .success-screen p {
+      font-size: 18px;
+      opacity: 0.9;
+      margin-bottom: 24px;
+    }
+
+    .stats {
+      margin-top: 28px;
+      padding: 18px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.05);
+      text-align: left;
+    }
+
+    .stats div {
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    @media (max-width: 640px) {
+      .quiz-container {
+        padding: 24px;
+      }
+
+      .question {
+        font-size: 24px;
+      }
+
+      .header {
+        align-items: stretch;
+      }
+
+      .reset-btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="quiz-container">
+
+    <div class="header">
+
+      <div class="progress-section">
+        <div class="progress-text" id="progressText">
+          Progress: 0 / 0 answered correctly
+        </div>
+
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </div>
+
+      <button class="reset-btn" id="resetBtn">
+        Reset Progress
+      </button>
+
+    </div>
+
+    <div id="quizContent"></div>
+
+  </div>
+
+  <script>
+
+    /*
+      ============================================================
+      PASTE YOUR QUESTIONS HERE
+      ============================================================
+    */
+
+    const quizData = [
+  {
+    "question": "What is the main physical reason why Carrier Sense Multiple Access with Collision Detection (CSMA/CD) from wired networks fails in wireless networks?",
+    "options": {
+      "a": "The bandwidth of wireless channels is too low.",
+      "b": "Collisions happen at the receiver, but the sender cannot hear them while transmitting.",
+      "c": "Wireless signals are too weak to carry a collision signal.",
+      "d": "The hidden terminal problem only affects CSMA/CA, not CSMA/CD."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "In the context of the course setup, what is the prerequisite regarding Machine Learning?",
+    "options": {
+      "a": "Basic knowledge of Python syntax.",
+      "b": "Profound knowledge in Machine Learning.",
+      "c": "Completion of a specific online MOOC.",
+      "d": "No prerequisites are needed; everything is taught from scratch."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "According to the lecture, why is the \"time now\" significant for applying AI to wireless networks?",
+    "options": {
+      "a": "Wireless networks have become slower, requiring AI for efficiency.",
+      "b": "Computing capacity (GPUs/TPUs) and massive amounts of generated data are available.",
+      "c": "AI algorithms were only invented in the last two years.",
+      "d": "Governments have mandated AI use in all public networks."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "Which of the following correctly describes the difference between analog and digital signals?",
+    "options": {
+      "a": "Analog signals are discrete in time; digital signals are continuous.",
+      "b": "Analog signals are continuous in time and value; digital signals assume only a limited number of values.",
+      "c": "Digital signals are used only for voice; analog signals are used for data.",
+      "d": "There is no difference; the terms are interchangeable."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "A signal has a spectrum ranging from 902.0 MHz to 902.2 MHz. What is its bandwidth?",
+    "options": {
+      "a": "902.1 MHz",
+      "b": "200 kHz",
+      "c": "0.2 Hz",
+      "d": "902.0 MHz"
+    },
+    "answer": "b"
+  },
+  {
+    "question": "According to the Friis free-space equation, how does received power (Pr) scale with distance (d) in a vacuum?",
+    "options": {
+      "a": "Pr scales linearly with 1/d.",
+      "b": "Pr scales with 1/d².",
+      "c": "Pr scales with 1/d⁴.",
+      "d": "Pr is independent of distance."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "What is the primary purpose of the Guard Time in TDMA systems like GSM?",
+    "options": {
+      "a": "To increase the data rate.",
+      "b": "To allow the mobile station to sleep and save power.",
+      "c": "To prevent co-channel interference from different propagation delays.",
+      "d": "To synchronize the frequency hopping sequence."
+    },
+    "answer": "c"
+  },
+  {
+    "question": "In GSM, what is the purpose of the \"Timing Advance\" mechanism?",
+    "options": {
+      "a": "To increase the transmission power of the mobile station.",
+      "b": "To encrypt the user data on the air interface.",
+      "c": "To adaptively shift the mobile's transmission time to compensate for propagation delay.",
+      "d": "To advance to the next generation of cellular technology."
+    },
+    "answer": "c"
+  },
+  {
+    "question": "Which security algorithm in GSM is a stream cipher used to encrypt over-the-air transmissions?",
+    "options": {
+      "a": "A3",
+      "b": "A8",
+      "c": "A5",
+      "d": "COMP128"
+    },
+    "answer": "c"
+  },
+  {
+    "question": "In the context of error control, a code with a Hamming distance d=4 can detect up to how many errors?",
+    "options": {
+      "a": "1 error",
+      "b": "2 errors",
+      "c": "3 errors",
+      "d": "4 errors"
+    },
+    "answer": "c"
+  },
+  {
+    "question": "What is the main advantage of using the Reservation Aloha (DAMA) protocol over pure Aloha?",
+    "options": {
+      "a": "It requires no synchronization.",
+      "b": "Collisions can only occur in the reservation period, while the transmission period is collision-free.",
+      "c": "It doubles the channel bandwidth.",
+      "d": "It eliminates the need for base stations."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "Which spread spectrum technique uses a pseudo-random chipping sequence applied via XOR to the user data?",
+    "options": {
+      "a": "Frequency Hopping Spread Spectrum (FHSS)",
+      "b": "Direct Sequence Spread Spectrum (DSSS)",
+      "c": "Orthogonal Frequency Division Multiplexing (OFDM)",
+      "d": "Time Division Multiplexing (TDM)"
+    },
+    "answer": "b"
+  },
+  {
+    "question": "In the IEEE 802.11 DCF (Distributed Coordination Function), what does a station do after detecting a busy medium and waiting for a DIFS?",
+    "options": {
+      "a": "It transmits immediately.",
+      "b": "It initiates a handover to another access point.",
+      "c": "It waits a random back-off time.",
+      "d": "It sends an RTS packet on a dedicated control channel."
+    },
+    "answer": "c"
+  },
+  {
+    "question": "What is the purpose of the Network Allocation Vector (NAV) in 802.11?",
+    "options": {
+      "a": "It is a vector of signal strengths used for MIMO.",
+      "b": "It is a virtual carrier sensing mechanism that indicates the duration of a pending transmission.",
+      "c": "It allocates IP addresses to mobile stations.",
+      "d": "It stores the routing table for the distribution system."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "Which Bluetooth packet type is used for SCO (Synchronous Connection Oriented) links and features Forward Error Correction (FEC)?",
+    "options": {
+      "a": "DH5",
+      "b": "DM3",
+      "c": "HV1",
+      "d": "AUX1"
+    },
+    "answer": "c"
+  },
+  {
+    "question": "In the cellular principle, what is a \"cluster\"?",
+    "options": {
+      "a": "A single high-power transmitter covering a large area.",
+      "b": "A group of cells in which every frequency channel must be unique.",
+      "c": "The device that manages handovers between MSCs.",
+      "d": "The physical area covered by one base station."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "What is \"Cell Breathing\" in DS-CDMA (UMTS) systems?",
+    "options": {
+      "a": "The cell physically expands and contracts with the weather.",
+      "b": "The effective cell size shrinks as the number of active users increases due to power control limits.",
+      "c": "The process of moving a cell tower to a new location.",
+      "d": "The method of exchanging air for cooling the base station."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "Which of the following is a key characteristic of LTE (Long Term Evolution) according to the slides?",
+    "options": {
+      "a": "It uses a circuit-switched core for voice calls.",
+      "b": "It employs a flat, IP-based network architecture.",
+      "c": "It only operates in the 2.4 GHz ISM band.",
+      "d": "It introduced the concept of a SIM card."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "The Nyquist-Shannon sampling theorem states that to fully reconstruct a bandlimited signal, the sampling rate must be:",
+    "options": {
+      "a": "Exactly equal to the bandwidth.",
+      "b": "At least twice the maximum frequency in the signal.",
+      "c": "At least ten times the maximum frequency in the signal.",
+      "d": "Independent of the bandwidth."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "In the context of the course project, what percentage of the final grade (Points of Presence) is allocated to the project term paper?",
+    "options": {
+      "a": "10%",
+      "b": "40%",
+      "c": "50%",
+      "d": "100%"
+    },
+    "answer": "b"
+  },
+  {
+    "question": "What phenomenon describes a rapid change in signal amplitude over a short distance due to multipath propagation?",
+    "options": {
+      "a": "Large-scale fading",
+      "b": "Path loss",
+      "c": "Small-scale fading",
+      "d": "Attenuation"
+    },
+    "answer": "c"
+  },
+  {
+    "question": "What is the function of the Interleaving step in the wireless transmission chain?",
+    "options": {
+      "a": "To compress the data for faster transmission.",
+      "b": "To spread burst errors out over time so they appear as single-bit errors.",
+      "c": "To amplify the signal power.",
+      "d": "To assign different frequencies to different users."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "In a CDMA system using orthogonal codes, what is the \"Near-Far\" problem?",
+    "options": {
+      "a": "A distant transmitter's signal appears stronger than a nearby one.",
+      "b": "A nearby transmitter's signal can drown out a weaker signal from a farther transmitter at the receiver.",
+      "c": "The signal fades in and out as the user moves.",
+      "d": "The frequency of the signal drifts over distance."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "Which multiple access scheme is used on the GSM Um radio interface?",
+    "options": {
+      "a": "Pure CDMA",
+      "b": "Pure FDMA",
+      "c": "TDMA/FDMA combined with FDD",
+      "d": "OFDMA"
+    },
+    "answer": "c"
+  },
+  {
+    "question": "According to the slides, what is a key limitation of the A3 and A8 algorithms in GSM?",
+    "options": {
+      "a": "They are standardized internationally, making them easy to break.",
+      "b": "They are not standardized and can be chosen by each operator, potentially affecting roaming.",
+      "c": "They are only used for data, not voice.",
+      "d": "They require a 256-bit key which is too long for the SIM."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "What is the purpose of Orthogonal Variable Spreading Factor (OVSF) codes in UMTS?",
+    "options": {
+      "a": "To separate different cells in the downlink.",
+      "b": "To provide variable length codes that preserve orthogonality for different data rates.",
+      "c": "To encrypt user data.",
+      "d": "To modulate the signal using QPSK."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "In OFDM (Orthogonal Frequency Division Multiplexing), how is orthogonality between sub-carriers achieved?",
+    "options": {
+      "a": "By separating them with wide guard bands.",
+      "b": "By spacing them apart by the inverse of the symbol duration.",
+      "c": "By using different antennas for each sub-carrier.",
+      "d": "By transmitting each sub-carrier at a different time."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "What is the function of the Home Location Register (HLR) in GSM/UMTS?",
+    "options": {
+      "a": "It manages the radio resources for a single base station.",
+      "b": "It is a central database containing permanent information about each subscriber.",
+      "c": "It handles the packet switching for GPRS.",
+      "d": "It amplifies the signal for the base station."
+    },
+    "answer": "b"
+  },
+  {
+    "question": "Which multiple access scheme is used in the downlink of LTE?",
+    "options": {
+      "a": "FDMA",
+      "b": "TDMA",
+      "c": "CDMA",
+      "d": "OFDMA"
+    },
+    "answer": "d"
+  },
+  {
+    "question": "What is a \"Survey Paper\" as defined in the lecture slides?",
+    "options": {
+      "a": "A paper that presents only the author's new experimental results.",
+      "b": "A paper that summarizes and organizes recent research results in a novel way, emphasizing classification and trends.",
+      "c": "A short opinion piece about a specific technology.",
+      "d": "A paper that lists questions for an exam."
+    },
+    "answer": "b"
+  }
+]
+
+
+    /*
+      ============================================================
+      LOCAL STORAGE
+      ============================================================
+    */
+
+    const STORAGE_KEY = "modern_quiz_app_progress";
+
+    function saveState() {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(state)
+      );
+    }
+
+    function loadState() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+
+      if (!saved) {
+        return null;
+      }
+
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return null;
+      }
+    }
+
+
+    /*
+      ============================================================
+      APP STATE
+      ============================================================
+    */
+
+    const defaultState = {
+      currentQuestion: 0,
+      selectedAnswer: null,
+      confirmed: false,
+      correctQuestions: [],
+      actionLog: []
+    };
+
+    let state = loadState() || defaultState;
+
+
+    /*
+      ============================================================
+      ELEMENTS
+      ============================================================
+    */
+
+    const quizContent = document.getElementById("quizContent");
+    const progressText = document.getElementById("progressText");
+    const progressFill = document.getElementById("progressFill");
+    const resetBtn = document.getElementById("resetBtn");
+
+
+    /*
+      ============================================================
+      HELPERS
+      ============================================================
+    */
+
+    function logAction(action, extra = {}) {
+      state.actionLog.push({
+        action,
+        timestamp: new Date().toISOString(),
+        ...extra
+      });
+
+      saveState();
+    }
+
+    function getCorrectCount() {
+      return state.correctQuestions.length;
+    }
+
+    function updateProgress() {
+
+      const total = quizData.length;
+      const correct = getCorrectCount();
+
+      progressText.textContent =
+        `Progress: ${correct} / ${total} answered correctly`;
+
+      const percentage =
+        total === 0
+          ? 0
+          : (correct / total) * 100;
+
+      progressFill.style.width = percentage + "%";
+    }
+
+    function getNextQuestionIndex() {
+
+      for (let i = 0; i < quizData.length; i++) {
+        if (!state.correctQuestions.includes(i)) {
+          return i;
+        }
+      }
+
+      return null;
+    }
+
+    function resetState() {
+
+      localStorage.removeItem(STORAGE_KEY);
+
+      state = {
+        currentQuestion: 0,
+        selectedAnswer: null,
+        confirmed: false,
+        correctQuestions: [],
+        actionLog: []
+      };
+
+      logAction("reset_progress");
+
+      updateProgress();
+      render();
+    }
+
+
+    /*
+      ============================================================
+      RENDER
+      ============================================================
+    */
+
+    function render() {
+
+      updateProgress();
+
+      if (quizData.length === 0) {
+
+        quizContent.innerHTML = `
+          <div class="success-screen">
+            <h1>No Questions</h1>
+            <p>Paste your quiz data into the quizData array.</p>
+          </div>
+        `;
+
+        return;
+      }
+
+      if (getCorrectCount() === quizData.length) {
+
+        const totalAttempts =
+          state.actionLog.filter(a => a.action === "confirm_answer").length;
+
+        quizContent.innerHTML = `
+          <div class="success-screen">
+            <h1>🎉 Congratulations</h1>
+
+            <p>
+              You completed the entire quiz.
+            </p>
+
+            <div class="stats">
+              <div><strong>Total Questions:</strong> ${quizData.length}</div>
+              <div><strong>Total Attempts:</strong> ${totalAttempts}</div>
+              <div><strong>Completed:</strong> ${new Date().toLocaleString()}</div>
+            </div>
+          </div>
+        `;
+
+        return;
+      }
+
+      state.currentQuestion = getNextQuestionIndex();
+
+      const q = quizData[state.currentQuestion];
+
+      quizContent.innerHTML = `
+        <div class="question-number">
+          Question ${state.currentQuestion + 1} of ${quizData.length}
+        </div>
+
+        <div class="question">
+          ${q.question}
+        </div>
+
+        <div class="options">
+          ${Object.entries(q.options).map(([key, value]) => `
+            <div
+              class="option"
+              data-key="${key}"
+            >
+              <strong>${key.toUpperCase()}.</strong> ${value}
+            </div>
+          `).join("")}
+        </div>
+
+        <div class="controls">
+          <button class="action-btn confirm-btn" id="confirmBtn">
+            Confirm Answer
+          </button>
+        </div>
+
+        <div class="message" id="message"></div>
+      `;
+
+      const options = document.querySelectorAll(".option");
+      const confirmBtn = document.getElementById("confirmBtn");
+      const message = document.getElementById("message");
+
+
+      /*
+        OPTION SELECT
+      */
+
+      options.forEach(option => {
+
+        option.addEventListener("click", () => {
+
+          if (state.confirmed) return;
+
+          options.forEach(o => {
+            o.classList.remove("selected");
+          });
+
+          option.classList.add("selected");
+
+          state.selectedAnswer = option.dataset.key;
+
+          saveState();
+
+          logAction("select_answer", {
+            questionIndex: state.currentQuestion,
+            selected: state.selectedAnswer
+          });
+        });
+      });
+
+
+      /*
+        CONFIRM
+      */
+
+      confirmBtn.addEventListener("click", () => {
+
+        if (!state.selectedAnswer || state.confirmed) {
+          return;
+        }
+
+        state.confirmed = true;
+
+        const correctAnswer = q.answer;
+
+        logAction("confirm_answer", {
+          questionIndex: state.currentQuestion,
+          selected: state.selectedAnswer,
+          correct: correctAnswer
+        });
+
+        options.forEach(option => {
+
+          const key = option.dataset.key;
+
+          if (key === correctAnswer) {
+            option.classList.add("correct");
+          }
+
+          if (
+            key === state.selectedAnswer &&
+            key !== correctAnswer
+          ) {
+            option.classList.add("wrong");
+          }
+        });
+
+
+        /*
+          CORRECT
+        */
+
+        if (state.selectedAnswer === correctAnswer) {
+
+          message.textContent = "Correct answer.";
+
+          if (
+            !state.correctQuestions.includes(state.currentQuestion)
+          ) {
+            state.correctQuestions.push(state.currentQuestion);
+          }
+
+          saveState();
+
+          updateProgress();
+
+          setTimeout(() => {
+
+            state.selectedAnswer = null;
+            state.confirmed = false;
+
+            saveState();
+
+            render();
+
+          }, 1200);
+
+        }
+
+        /*
+          WRONG
+        */
+
+        else {
+
+          message.textContent = "Wrong answer. Try again.";
+
+          const retryBtn = document.createElement("button");
+
+          retryBtn.className =
+            "action-btn retry-btn";
+
+          retryBtn.textContent = "Try Again";
+
+          retryBtn.addEventListener("click", () => {
+
+            logAction("retry_question", {
+              questionIndex: state.currentQuestion
+            });
+
+            state.selectedAnswer = null;
+            state.confirmed = false;
+
+            saveState();
+
+            render();
+          });
+
+          document
+            .querySelector(".controls")
+            .appendChild(retryBtn);
+
+          saveState();
+        }
+      });
+    }
+
+
+    /*
+      ============================================================
+      RESET BUTTON
+      ============================================================
+    */
+
+    resetBtn.addEventListener("click", () => {
+
+      const confirmed =
+        confirm("Reset all saved quiz progress?");
+
+      if (!confirmed) return;
+
+      resetState();
+    });
+
+
+    /*
+      ============================================================
+      START
+      ============================================================
+    */
+
+    render();
+
+  </script>
+
+</body>
+</html>
