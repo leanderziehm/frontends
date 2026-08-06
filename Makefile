@@ -3,3 +3,6 @@ podman-run:
 
 docker-run:
 	docker build -t frontends . && docker run --rm -it -v ssh_data:/app/data -p 8100:8100 frontends
+
+gen:
+	python generate_index.py
