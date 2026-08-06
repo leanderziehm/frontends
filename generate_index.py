@@ -3,7 +3,7 @@ generate_index.py
 
 Scans the current directory tree for `index.html` files (i.e. individual
 frontend pages/projects) and generates a polished root-level `index.html`
-that links to each one.
+that links to each one — with live iframe previews and a grid/list toggle.
 
 Usage:
     python generate_index.py
@@ -11,6 +11,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime
@@ -30,15 +31,14 @@ EXCLUDED_DIRS = {
     "build",
 }
 
-# A small rotating palette so each card gets a distinct accent color.
 ACCENT_COLORS = [
-    "#6366f1",  # indigo
-    "#8b5cf6",  # violet
-    "#ec4899",  # pink
-    "#f59e0b",  # amber
-    "#10b981",  # emerald
-    "#06b6d4",  # cyan
-    "#ef4444",  # red
+    "#6366f1",
+    "#8b5cf6",
+    "#ec4899",
+    "#f59e0b",
+    "#10b981",
+    "#06b6d4",
+    "#ef4444",
 ]
 
 
@@ -56,11 +56,9 @@ def discover_pages() -> list[Page]:
     for index in BASE_DIR.rglob("index.html"):
         rel = index.relative_to(BASE_DIR)
 
-        # Skip the generated root index itself.
         if rel == Path("index.html"):
             continue
 
-        # Skip excluded folders anywhere in the path.
         if any(part in EXCLUDED_DIRS for part in rel.parts):
             continue
 
@@ -84,31 +82,17 @@ def humanize(name: str) -> str:
     return label.strip().title() or name
 
 
-def render_card(page: Page) -> str:
-    display_name = humanize(page.name)
-    initial = display_name[:1].upper() or "?"
-    return f"""        <a class="card" href="{page.url}" style="--accent:{page.accent}">
-          <span class="card-icon" aria-hidden="true">{initial}</span>
-          <span class="card-body">
-            <span class="card-title">{display_name}</span>
-            <span class="card-path">/{page.url}</span>
-          </span>
-          <span class="card-arrow" aria-hidden="true">&rarr;</span>
-        </a>"""
-
-
-def render_empty_state() -> str:
-    return """        <div class="empty">
-          <p>No pages found yet.</p>
-          <p class="empty-sub">Add a folder containing an <code>index.html</code> and regenerate.</p>
-        </div>"""
-
-
 def build_html(pages: list[Page]) -> str:
-    cards_html = "\n".join(render_card(p) for p in pages) if pages else render_empty_state()
     count = len(pages)
     count_label = "page" if count == 1 else "pages"
     generated_at = datetime.now().strftime("%B %d, %Y at %H:%M")
+
+    pages_json = json.dumps(
+        [
+            {"name": humanize(p.name), "path": p.name, "url": p.url, "accent": p.accent}
+            for p in pages
+        ]
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -143,19 +127,18 @@ def build_html(pages: list[Page]) -> str:
       radial-gradient(circle at 85% 80%, rgba(236, 72, 153, 0.2), transparent 45%),
       linear-gradient(160deg, var(--bg-1), var(--bg-2));
     background-attachment: fixed;
-    display: flex;
-    justify-content: center;
-    padding: 64px 20px;
+    padding: 48px 20px 80px;
   }}
 
-  .container {{
+  .page-wrap {{
     width: 100%;
-    max-width: 760px;
+    max-width: 64vw;
+    margin: 0 auto;
   }}
 
   header {{
     text-align: center;
-    margin-bottom: 40px;
+    margin-bottom: 28px;
   }}
 
   .eyebrow {{
@@ -183,19 +166,135 @@ def build_html(pages: list[Page]) -> str:
     font-size: 15px;
   }}
 
-  .cards {{
+  .toolbar {{
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
     gap: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin-bottom: 24px;
+  }}
+
+  .toolbar-group {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }}
+
+  .toolbar-label {{
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-right: 4px;
+  }}
+
+  .seg {{
+    display: inline-flex;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 2px;
+  }}
+
+  .seg button {{
+    all: unset;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    border-radius: 7px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }}
+
+  .seg button.active {{
+    background: #6366f1;
+    color: #fff;
+  }}
+
+  .toggle-row {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+  }}
+
+  .switch {{
+    position: relative;
+    width: 34px;
+    height: 20px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.15);
+    transition: background 0.15s ease;
+    flex-shrink: 0;
+  }}
+
+  .switch::after {{
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.15s ease;
+  }}
+
+  .toggle-row.on .switch {{
+    background: #6366f1;
+  }}
+
+  .toggle-row.on .switch::after {{
+    transform: translateX(14px);
+  }}
+
+  select.col-select {{
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+  }}
+
+  select.col-select:focus {{
+    outline: 1px solid #6366f1;
+  }}
+
+  .items {{
+    display: grid;
+    gap: 24px;
+  }}
+
+  .items[data-cols="1"] {{ grid-template-columns: 1fr; }}
+  .items[data-cols="2"] {{ grid-template-columns: repeat(2, 1fr); }}
+  .items[data-cols="3"] {{ grid-template-columns: repeat(3, 1fr); }}
+
+  @media (max-width: 720px) {{
+    .items[data-cols="2"],
+    .items[data-cols="3"] {{
+      grid-template-columns: 1fr;
+    }}
   }}
 
   .card {{
     --accent: #6366f1;
     position: relative;
     display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 16px 18px;
+    flex-direction: column;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -205,33 +304,76 @@ def build_html(pages: list[Page]) -> str:
     transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
   }}
 
-  .card::before {{
-    content: "";
-    position: absolute;
-    inset: 0;
-    left: 0;
-    width: 4px;
-    background: var(--accent);
-  }}
-
   .card:hover {{
     background: var(--surface-hover);
     border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
     transform: translateY(-2px);
   }}
 
-  .card-icon {{
-    flex-shrink: 0;
+  .card-preview {{
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    background: #0b1020;
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+  }}
+
+  .card-preview iframe {{
+    width: 400%;
+    height: 400%;
+    transform: scale(0.25);
+    transform-origin: top left;
+    border: none;
+    pointer-events: none;
+    background: #fff;
+  }}
+
+  .card-preview .preview-placeholder {{
+    position: absolute;
+    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
+    font-size: 28px;
     font-weight: 700;
-    font-size: 16px;
     color: var(--bg-1);
     background: var(--accent);
+  }}
+
+  .card-preview .open-badge {{
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(4px);
+    color: #fff;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }}
+
+  .card:hover .open-badge {{
+    opacity: 1;
+  }}
+
+  .card-info {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+  }}
+
+  .card-info::before {{
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
   }}
 
   .card-body {{
@@ -243,11 +385,11 @@ def build_html(pages: list[Page]) -> str:
 
   .card-title {{
     font-weight: 600;
-    font-size: 15.5px;
+    font-size: 15px;
   }}
 
   .card-path {{
-    font-size: 12.5px;
+    font-size: 12px;
     color: var(--text-secondary);
     font-family: "SFMono-Regular", Consolas, monospace;
     white-space: nowrap;
@@ -265,6 +407,36 @@ def build_html(pages: list[Page]) -> str:
   .card:hover .card-arrow {{
     transform: translateX(4px);
     color: var(--text-primary);
+  }}
+
+  .items.list-mode {{
+    grid-template-columns: 1fr !important;
+  }}
+
+  .items.list-mode .card {{
+    flex-direction: row;
+    align-items: center;
+  }}
+
+  .items.list-mode .card-preview {{
+    width: 120px;
+    aspect-ratio: auto;
+    height: 76px;
+    flex-shrink: 0;
+    border-bottom: none;
+    border-right: 1px solid var(--border);
+  }}
+
+  .items.list-mode .card-info {{
+    flex: 1;
+  }}
+
+  .items.list-mode .card-info::before {{
+    display: none;
+  }}
+
+  .items.no-preview .card-preview {{
+    display: none;
   }}
 
   .empty {{
@@ -300,19 +472,118 @@ def build_html(pages: list[Page]) -> str:
 </style>
 </head>
 <body>
-  <div class="container">
+  <div class="page-wrap">
     <header>
       <span class="eyebrow">{count} {count_label} found</span>
       <h1>Project Index</h1>
       <p class="subtitle">Every page discovered under this directory, ready to open.</p>
     </header>
 
-    <main class="cards">
-{cards_html}
-    </main>
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <span class="toolbar-label">Layout</span>
+        <div class="seg" id="layout-seg">
+          <button data-layout="grid" class="active">Grid</button>
+          <button data-layout="list">List</button>
+        </div>
+      </div>
+
+      <div class="toolbar-group">
+        <select id="col-select" class="col-select">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3"selected>3</option>
+        </select>
+        <span class="toolbar-label">Columns</span>
+      </div>
+
+      <div class="toolbar-group">
+        <label class="toggle-row on" id="preview-toggle">
+          <span class="switch"></span>
+          <span>Live previews</span>
+        </label>
+      </div>
+    </div>
+
+    <main class="items" id="items" data-cols="2"></main>
 
     <footer>Generated on {generated_at}</footer>
   </div>
+
+<script>
+  const PAGES = {pages_json};
+  const itemsEl = document.getElementById("items");
+  const colSelect = document.getElementById("col-select");
+  const layoutSeg = document.getElementById("layout-seg");
+  const previewToggle = document.getElementById("preview-toggle");
+
+  const state = {{
+    layout: "grid",
+    cols: 3,
+    preview: true,
+  }};
+
+  function render() {{
+    if (PAGES.length === 0) {{
+      itemsEl.innerHTML = `
+        <div class="empty">
+          <p>No pages found yet.</p>
+          <p class="empty-sub">Add a folder containing an <code>index.html</code> and regenerate.</p>
+        </div>`;
+      return;
+    }}
+
+    itemsEl.innerHTML = PAGES.map(p => `
+      <a class="card" href="${{p.url}}" style="--accent:${{p.accent}}" target="_blank" rel="noopener">
+        <span class="card-preview">
+          <span class="preview-placeholder">${{(p.name[0] || "?").toUpperCase()}}</span>
+          ${{state.preview ? `<iframe src="${{p.url}}" loading="lazy" title="${{p.name}} preview"></iframe>` : ""}}
+          <span class="open-badge">Open &rarr;</span>
+        </span>
+        <span class="card-info">
+          <span class="card-body">
+            <span class="card-title">${{p.name}}</span>
+            <span class="card-path">/${{p.url}}</span>
+          </span>
+          <span class="card-arrow">&rarr;</span>
+        </span>
+      </a>
+    `).join("");
+  }}
+
+  function applyLayoutClasses() {{
+    itemsEl.classList.toggle("list-mode", state.layout === "list");
+    itemsEl.classList.toggle("no-preview", !state.preview);
+    itemsEl.dataset.cols = state.layout === "list" ? "1" : String(state.cols);
+    colSelect.disabled = state.layout === "list";
+    colSelect.style.opacity = state.layout === "list" ? 0.4 : 1;
+  }}
+
+  layoutSeg.addEventListener("click", (e) => {{
+    const btn = e.target.closest("button[data-layout]");
+    if (!btn) return;
+    state.layout = btn.dataset.layout;
+    [...layoutSeg.querySelectorAll("button")].forEach(b =>
+      b.classList.toggle("active", b === btn)
+    );
+    applyLayoutClasses();
+  }});
+
+  colSelect.addEventListener("change", () => {{
+    state.cols = Number(colSelect.value);
+    applyLayoutClasses();
+  }});
+
+  previewToggle.addEventListener("click", () => {{
+    state.preview = !state.preview;
+    previewToggle.classList.toggle("on", state.preview);
+    render();
+    applyLayoutClasses();
+  }});
+
+  render();
+  applyLayoutClasses();
+</script>
 </body>
 </html>
 """
