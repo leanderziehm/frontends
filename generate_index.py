@@ -481,7 +481,6 @@ def build_html(pages: list[Page]) -> str:
 
     <div class="toolbar">
       <div class="toolbar-group">
-        <span class="toolbar-label">Layout</span>
         <div class="seg" id="layout-seg">
           <button data-layout="grid" class="active">Grid</button>
           <button data-layout="list">List</button>
@@ -537,7 +536,7 @@ def build_html(pages: list[Page]) -> str:
       <a class="card" href="${{p.url}}" style="--accent:${{p.accent}}" target="_blank" rel="noopener">
         <span class="card-preview">
           <span class="preview-placeholder">${{(p.name[0] || "?").toUpperCase()}}</span>
-          ${{state.preview ? `<iframe src="${{p.url}}" loading="lazy" title="${{p.name}} preview"></iframe>` : ""}}
+          ${{state.preview ? `<iframe src="${{p.url}}" loading="lazy" sandbox="allow-same-origin" title="${{p.name}} preview"></iframe>` : ""}}
           <span class="open-badge">Open &rarr;</span>
         </span>
         <span class="card-info">
