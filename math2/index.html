@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Math Practice</title>
+</head>
+<body>
+
+<h1>Math Practice</h1>
+
+<p>
+  Correct: <span id="correct">0</span> |
+  False: <span id="false">0</span> |
+  Playtime: <span id="playtime">0s</span>
+</p>
+
+<p>
+  Average answer time:
+  <span id="averageTime">0s</span>
+  |
+  Last 10:
+  <span id="averageLast10">0s</span>
+</p>
+
+<h2 id="question">Press Start</h2>
+
+<input
+  id="answer"
+  type="number"
+  autocomplete="off"
+  disabled
+  placeholder="Your answer"
+>
+
+<button id="start">Start</button>
+<button id="clearHistory">Clear History</button>
+
+<p id="result"></p>
+
+<h3>History</h3>
+<div id="history"></div>
+
+<script>
+"use strict";
+
+const STORAGE_KEY = "mathPracticeHistory";
+
+let history = loadHistory();
+let currentQuestion = null;
+let questionStartedAt = 0;
+let gameStartedAt = 0;
+let playTimer = null;
+let playing = false;
+
+const questionEl = document.getElementById("question");
+const answerEl = document.getElementById("answer");
+const resultEl = document.getElementById("result");
+const correctEl = document.getElementById("correct");
+const falseEl = document.getElementById("false");
+const playtimeEl = document.getElementById("playtime");
+const averageTimeEl = document.getElementById("averageTime");
+const averageLast10El = document.getElementById("averageLast10");
+const historyEl = document.getElementById("history");
+const startButton = document.getElementById("start");
+const clearButton = document.getElementById("clearHistory");
+
+function loadHistory() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function saveHistory() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+}
+
+function randomInt(max) {
+  return Math.floor(Math.random() * (max + 1));
+}
+
+function makeQuestion() {
+  let a = randomInt(2026);
+  let b = randomInt(2026);
+
+  // Randomly choose + or -.
+  const operator = Math.random() < 0.5 ? "+" : "-";
+
+  // For subtraction, keep the answer non-negative.
+  if (operator === "-" && b > a) {
+    [a, b] = [b, a];
+  }
+
+  const correctAnswer =
+    operator === "+"
+      ? a + b
+      : a - b;
+
+  return {
+    a,
+    b,
+    operator,
+    correctAnswer
+  };
+}
+
+function showQuestion() {
+  currentQuestion = makeQuestion();
+
+  questionEl.textContent =
+    `${currentQuestion.a} ${currentQuestion.operator} ${currentQuestion.b} = ?`;
+
+  answerEl.value = "";
+  answerEl.disabled = false;
+  answerEl.focus();
+
+  resultEl.textContent = "";
+  questionStartedAt = performance.now();
+}
+
+function startGame() {
+  playing = true;
+  gameStartedAt = performance.now();
+
+  startButton.textContent = "Restart";
+  answerEl.disabled = false;
+
+  clearInterval(playTimer);
+  playTimer = setInterval(updatePlaytime, 100);
+
+  showQuestion();
+  updateStats();
+}
+
+function updatePlaytime() {
+  if (!playing) return;
+
+  const seconds = (performance.now() - gameStartedAt) / 1000;
+  playtimeEl.textContent = formatTime(seconds);
+}
+
+function formatTime(seconds) {
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+
+  return `${minutes}m ${remainingSeconds}s`;
+}
+
+function submitAnswer() {
+  if (!playing || !currentQuestion) return;
+
+  const raw = answerEl.value.trim();
+
+  if (raw === "") return;
+
+  const userAnswer = Number(raw);
+  const answerTime =
+    (performance.now() - questionStartedAt) / 1000;
+
+  const isCorrect =
+    userAnswer === currentQuestion.correctAnswer;
+
+  history.push({
+    timestamp: Date.now(),
+    question:
+      `${currentQuestion.a} ${currentQuestion.operator} ${currentQuestion.b}`,
+    correctAnswer: currentQuestion.correctAnswer,
+    userAnswer,
+    correct: isCorrect,
+    answerTime
+  });
+
+  saveHistory();
+
+  resultEl.textContent = isCorrect
+    ? "Correct!"
+    : `False. The answer was ${currentQuestion.correctAnswer}.`;
+
+  updateStats();
+  renderHistory();
+
+  // Give the result a moment to be visible before the next question.
+  setTimeout(() => {
+    if (playing) {
+      showQuestion();
+    }
+  }, 350);
+}
+
+function updateStats() {
+  const correct = history.filter(item => item.correct).length;
+  const incorrect = history.length - correct;
+
+  correctEl.textContent = correct;
+  falseEl.textContent = incorrect;
+
+  const allTimes = history
+    .map(item => Number(item.answerTime))
+    .filter(Number.isFinite);
+
+  const last10 = allTimes.slice(-10);
+
+  const average =
+    allTimes.length
+      ? allTimes.reduce((sum, time) => sum + time, 0) / allTimes.length
+      : 0;
+
+  const average10 =
+    last10.length
+      ? last10.reduce((sum, time) => sum + time, 0) / last10.length
+      : 0;
+
+  averageTimeEl.textContent = `${average.toFixed(2)}s`;
+  averageLast10El.textContent = `${average10.toFixed(2)}s`;
+}
+
+function renderHistory() {
+  if (history.length === 0) {
+    historyEl.textContent = "No history yet.";
+    return;
+  }
+
+  const recent = history.slice(-20).reverse();
+
+  historyEl.innerHTML = recent.map(item => {
+    const status = item.correct ? "Correct" : "False";
+
+    return `
+      <div>
+        ${escapeHtml(item.question)} =
+        ${item.userAnswer}
+        | ${status}
+        | ${Number(item.answerTime).toFixed(2)}s
+      </div>
+    `;
+  }).join("");
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function clearHistory() {
+  if (!confirm("Delete all saved history?")) return;
+
+  history = [];
+  saveHistory();
+  updateStats();
+  renderHistory();
+}
+
+startButton.addEventListener("click", startGame);
+clearButton.addEventListener("click", clearHistory);
+
+answerEl.addEventListener("keydown", event => {
+  if (event.key === "Enter") {
+    submitAnswer();
+  }
+});
+
+// Initial display.
+updateStats();
+renderHistory();
+</script>
+
+</body>
+</html>
