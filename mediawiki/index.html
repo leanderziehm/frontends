@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wikimedia Commons Image Search</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      background-color: #f9f9f9;
+      color: #333;
+    }
+    .search-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    input {
+      flex: 1;
+      padding: 10px 14px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    button {
+      padding: 10px 18px;
+      font-size: 16px;
+      background-color: #0066cc;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover { background-color: #0052a3; }
+    button:disabled { background-color: #ccc; cursor: not-allowed; }
+    
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px;
+    }
+    .card img {
+      width: 100%;
+      height: 120px;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+    .card p {
+      font-size: 12px;
+      margin: 8px 0 0 0;
+      text-align: center;
+      word-break: break-word;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .load-more-container {
+      text-align: center;
+      margin-top: 20px;
+    }
+    #status {
+      text-align: center;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Wikimedia Commons Search</h2>
+
+  <form class="search-bar" onsubmit="handleNewSearch(event)">
+    <input type="text" id="searchInput" placeholder="Search images (e.g., Cats, Space, Eiffel Tower)..." required>
+    <button type="submit">Search</button>
+  </form>
+
+  <div id="gallery" class="gallery"></div>
+  <p id="status"></p>
+
+  <div class="load-more-container">
+    <button id="loadMoreBtn" onclick="fetchImages()" style="display: none;">Load More</button>
+  </div>
+
+  <script>
+    let currentQuery = '';
+    let currentOffset = 0;
+    const LIMIT = 5; // Fetch 5 items per request
+
+    function handleNewSearch(event) {
+      event.preventDefault();
+      const inputVal = document.getElementById('searchInput').value.trim();
+      if (!inputVal) return;
+
+      // Reset search state
+      currentQuery = inputVal;
+      currentOffset = 0;
+      document.getElementById('gallery').innerHTML = '';
+      document.getElementById('loadMoreBtn').style.display = 'none';
+
+      fetchImages();
+    }
+
+    async function fetchImages() {
+      const statusEl = document.getElementById('status');
+      const loadMoreBtn = document.getElementById('loadMoreBtn');
+      
+      statusEl.textContent = 'Loading...';
+      loadMoreBtn.disabled = true;
+
+      // MediaWiki Generator API query:
+      // gsrsearch: search keyword restricted to File namespace (6)
+      // gsroffset: starting position for pagination
+      // gsrlimit: number of items to return
+      // prop=imageinfo&iiprop=url: fetches thumbnail URLs
+      const apiUrl = `https://commons.wikimedia.org/w/api.php?` +
+        `action=query&generator=search&gsrnamespace=6` +
+        `&gsrsearch=${encodeURIComponent(currentQuery)}` +
+        `&gsrlimit=${LIMIT}` +
+        `&gsroffset=${currentOffset}` +
+        `&prop=imageinfo&iiprop=url&iiurlwidth=300` +
+        `&format=json&origin=*`;
+
+      try {
+        const response = await fetch(apiUrl);
+        const data = await response.json();
+
+        statusEl.textContent = '';
+
+        if (!data.query || !data.query.pages) {
+          if (currentOffset === 0) {
+            statusEl.textContent = 'No images found.';
+          } else {
+            statusEl.textContent = 'No more images available.';
+            loadMoreBtn.style.display = 'none';
+          }
+          return;
+        }
+
+        const pages = Object.values(data.query.pages);
+        renderImages(pages);
+
+        // Check if Wikimedia provided a continue token for more results
+        if (data.continue && data.continue.gsroffset) {
+          currentOffset = data.continue.gsroffset;
+          loadMoreBtn.style.display = 'inline-block';
+          loadMoreBtn.disabled = false;
+        } else {
+          loadMoreBtn.style.display = 'none';
+          statusEl.textContent = 'End of results.';
+        }
+
+      } catch (error) {
+        statusEl.textContent = 'Error loading images: ' + error.message;
+        loadMoreBtn.disabled = false;
+      }
+    }
+
+    function renderImages(pages) {
+      const gallery = document.getElementById('gallery');
+
+      pages.forEach(page => {
+        if (!page.imageinfo || !page.imageinfo[0]) return;
+
+        const info = page.imageinfo[0];
+        // Use thumburl if generated, otherwise fallback to direct url
+        const imgUrl = info.thumburl || info.url; 
+        const title = page.title.replace('File:', '');
+
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <a href="${info.descriptionurl}" target="_blank" title="View on Wikimedia Commons">
+            <img src="${imgUrl}" alt="${title}" loading="lazy">
+          </a>
+          <p>${title}</p>
+        `;
+        gallery.appendChild(card);
+      });
+    }
+  </script>
+</body>
+</html>
