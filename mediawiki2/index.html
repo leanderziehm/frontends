@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wikimedia Commons Image Viewer</title>
+
+    <style>
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            display: flex;
+            gap: 8px;
+            padding: 8px;
+        }
+
+        main {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #image-area {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #main-image {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        #controls {
+            flex: 0 0 auto;
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 10px;
+        }
+
+        #controls button {
+            min-width: 120px;
+            min-height: 64px;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        #status {
+            flex: 0 0 auto;
+            text-align: center;
+            padding: 4px 8px;
+        }
+
+        #search {
+            flex: 1;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <input
+        id="search"
+        type="search"
+        placeholder="Search Wikimedia Commons..."
+        value="nature"
+    >
+    <button id="search-button" type="button">Search</button>
+</header>
+
+<main>
+    <section id="image-area">
+        <img id="main-image" alt="">
+    </section>
+
+    <div id="status">Loading...</div>
+
+    <nav id="controls" aria-label="Image navigation">
+        <button id="previous" type="button">Previous</button>
+        <button id="next" type="button">Next</button>
+    </nav>
+</main>
+
+<script>
+    const API_URL = "https://commons.wikimedia.org/w/api.php";
+
+    const image = document.getElementById("main-image");
+    const searchInput = document.getElementById("search");
+    const searchButton = document.getElementById("search-button");
+    const previousButton = document.getElementById("previous");
+    const nextButton = document.getElementById("next");
+    const status = document.getElementById("status");
+
+    /*
+     * images contains the images we already know about.
+     *
+     * currentIndex points at the image currently displayed.
+     *
+     * The next image is deliberately loaded into the browser cache
+     * before Next is clicked.
+     */
+    let images = [];
+    let currentIndex = -1;
+
+    let searchToken = 0;
+    let continuation = null;
+    let loadingSearchResults = false;
+
+    /*
+     * Browser-side image cache.
+     *
+     * Once an image has been loaded, Previous can display it immediately.
+     */
+    const loadedImages = new Map();
+
+    /*
+     * Fetch images from Wikimedia Commons.
+     */
+    async function searchCommons(query, token) {
+        if (!query.trim()) {
+            return;
+        }
+
+        loadingSearchResults = true;
+        status.textContent = "Searching Wikimedia Commons...";
+
+        try {
+            const params = new URLSearchParams({
+                action: "query",
+                generator: "search",
+                gsrnamespace: "6",
+                gsrsearch: query,
+                gsrlimit: "20",
+                prop: "imageinfo",
+                iiprop: "url|mime|size",
+                iiurlwidth: "3840",
+                format: "json",
+                origin: "*"
+            });
+
+            if (continuation) {
+                params.set("gsroffset", continuation);
+            }
+
+            const response = await fetch(`${API_URL}?${params}`);
+            const data = await response.json();
+
+            if (token !== searchToken) {
+                return;
+            }
+
+            const pages = Object.values(data.query?.pages || {});
+
+            const newImages = pages
+                .filter(page => page.imageinfo?.[0])
+                .map(page => {
+                    const info = page.imageinfo[0];
+
+                    return {
+                        title: page.title,
+                        url: info.thumburl || info.url,
+                        originalUrl: info.url,
+                        width: info.width,
+                        height: info.height,
+                        mime: info.mime
+                    };
+                })
+                .filter(item => item.mime && item.mime.startsWith("image/"));
+
+            images.push(...newImages);
+
+            continuation = data.continue?.gsroffset ?? null;
+
+            loadingSearchResults = false;
+
+            if (currentIndex === -1 && images.length > 0) {
+                currentIndex = 0;
+                showImage(currentIndex);
+            } else {
+                preloadNext();
+            }
+
+            updateControls();
+
+        } catch (error) {
+            console.error(error);
+
+            loadingSearchResults = false;
+            status.textContent = "Could not load Wikimedia Commons results.";
+        }
+    }
+
+    /*
+     * Load an image into the browser cache.
+     *
+     * This is the important part for instant Next navigation.
+     */
+    function preloadImage(item) {
+        if (!item || !item.url) {
+            return Promise.resolve();
+        }
+
+        if (loadedImages.has(item.url)) {
+            return loadedImages.get(item.url);
+        }
+
+        const promise = new Promise((resolve, reject) => {
+            const preload = new Image();
+
+            preload.onload = () => {
+                resolve(preload);
+            };
+
+            preload.onerror = reject;
+
+            /*
+             * Assigning src starts the download immediately.
+             */
+            preload.src = item.url;
+        });
+
+        loadedImages.set(item.url, promise);
+
+        return promise;
+    }
+
+    /*
+     * Keep exactly the next image actively being prepared.
+     *
+     * If we're near the end of the current API batch, also ask Commons
+     * for another batch so navigation doesn't run out of images.
+     */
+    async function preloadNext() {
+        const nextIndex = currentIndex + 1;
+        const nextItem = images[nextIndex];
+
+        if (nextItem) {
+            try {
+                await preloadImage(nextItem);
+                status.textContent =
+                    `${currentIndex + 1} / ${images.length}`;
+            } catch {
+                console.warn("Next image failed to preload.");
+            }
+        }
+
+        /*
+         * Get more search results before the user reaches the end.
+         */
+        if (
+            continuation !== null &&
+            !loadingSearchResults &&
+            images.length - currentIndex <= 5
+        ) {
+            const token = searchToken;
+            await searchCommons(searchInput.value, token);
+        }
+
+        updateControls();
+    }
+
+    /*
+     * Display an already-loaded image.
+     *
+     * The image element is changed only after the image has loaded,
+     * preventing a blank/loading state during normal navigation.
+     */
+    async function showImage(index) {
+        if (index < 0 || index >= images.length) {
+            return;
+        }
+
+        const item = images[index];
+
+        try {
+            const loaded = await preloadImage(item);
+
+            /*
+             * The user may have clicked Next/Previous while the image
+             * was loading. Don't display an old request over the newer one.
+             */
+            if (index !== currentIndex) {
+                return;
+            }
+
+            image.src = loaded.src;
+            image.alt = item.title;
+
+            status.textContent =
+                `${index + 1} / ${images.length} — ${item.title}`;
+
+            updateControls();
+
+            /*
+             * Start downloading the next image immediately.
+             */
+            preloadNext();
+
+        } catch (error) {
+            console.error(error);
+
+            status.textContent = "Image could not be loaded.";
+            updateControls();
+        }
+    }
+
+    /*
+     * Next navigation.
+     *
+     * In normal operation this image is already in the browser cache,
+     * so switching is effectively instantaneous.
+     */
+    async function nextImage() {
+        const nextIndex = currentIndex + 1;
+
+        if (nextIndex >= images.length) {
+            /*
+             * If we haven't received another API batch yet, ask for one.
+             */
+            if (continuation !== null && !loadingSearchResults) {
+                await searchCommons(searchInput.value, searchToken);
+            }
+        }
+
+        if (currentIndex + 1 < images.length) {
+            currentIndex++;
+            showImage(currentIndex);
+        }
+
+        updateControls();
+    }
+
+    /*
+     * Previous navigation uses the existing image list and browser cache,
+     * so previously viewed images don't need to be downloaded again.
+     */
+    function previousImage() {
+        if (currentIndex <= 0) {
+            return;
+        }
+
+        currentIndex--;
+        showImage(currentIndex);
+        updateControls();
+    }
+
+    function updateControls() {
+        previousButton.disabled = currentIndex <= 0;
+
+        /*
+         * Don't disable Next merely because we're at the end of the
+         * currently downloaded search batch. More results may be coming.
+         */
+        nextButton.disabled =
+            images.length === 0 ||
+            (currentIndex >= images.length - 1 && continuation === null);
+
+        if (images.length > 0) {
+            status.textContent =
+                `${currentIndex + 1} / ${images.length} — ${images[currentIndex]?.title || ""}`;
+        }
+    }
+
+    /*
+     * Start a completely new search.
+     */
+    function startSearch() {
+        const query = searchInput.value.trim();
+
+        if (!query) {
+            return;
+        }
+
+        searchToken++;
+
+        images = [];
+        currentIndex = -1;
+        continuation = null;
+        loadingSearchResults = false;
+
+        /*
+         * Keep the browser's cache, but remove our references to old
+         * search results so a new search starts cleanly.
+         */
+        status.textContent = "Searching Wikimedia Commons...";
+        image.removeAttribute("src");
+        image.alt = "";
+
+        searchCommons(query, searchToken);
+    }
+
+    /*
+     * Keyboard navigation is useful in addition to the large buttons.
+     */
+    document.addEventListener("keydown", event => {
+        if (event.key === "ArrowRight") {
+            nextImage();
+        }
+
+        if (event.key === "ArrowLeft") {
+            previousImage();
+        }
+    });
+
+    nextButton.addEventListener("click", nextImage);
+    previousButton.addEventListener("click", previousImage);
+    searchButton.addEventListener("click", startSearch);
+
+    searchInput.addEventListener("keydown", event => {
+        if (event.key === "Enter") {
+            startSearch();
+        }
+    });
+
+    /*
+     * Initial search.
+     */
+    startSearch();
+</script>
+
+</body>
+  </html>
