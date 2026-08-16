@@ -1,0 +1,1259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Math Practice</title>
+</head>
+
+<body>
+
+<h1>Math Practice</h1>
+
+<p>
+  Correct: <span id="correct">0</span> |
+  False: <span id="false">0</span> |
+  Playtime: <span id="playtime">0s</span>
+</p>
+
+<p>
+  Average answer time:
+  <span id="averageTime">0s</span>
+  |
+  Average last 10:
+  <span id="averageLast10">0s</span>
+</p>
+
+<hr>
+
+<h2 id="question">Press Start</h2>
+
+<input
+  id="answer"
+  type="number"
+  autocomplete="off"
+  disabled
+  placeholder="Your answer"
+>
+
+<button id="start">Start</button>
+<button id="continue" hidden>Continue</button>
+<button id="profile">Profile</button>
+
+<p id="result"></p>
+<div id="solution"></div>
+
+<!-- Profile -->
+<div id="profilePanel" hidden>
+
+  <hr>
+
+  <h2>Profile</h2>
+
+  <h3>Question Settings</h3>
+
+  <label>
+    Maximum number:
+    <input
+      id="maxNumber"
+      type="number"
+      min="1"
+      max="2026"
+      step="1"
+    >
+  </label>
+
+  <button id="saveSettings">
+    Save Settings
+  </button>
+
+  <p id="settingsMessage"></p>
+
+  <hr>
+
+  <h3>History</h3>
+
+  <button id="exportHistory">
+    Export History
+  </button>
+
+  <button id="importHistory">
+    Import history.json
+  </button>
+
+  <input
+    id="importFile"
+    type="file"
+    accept=".json,application/json"
+    hidden
+  >
+
+  <br><br>
+
+  <button id="deleteHistory">
+    Delete History
+  </button>
+
+  <hr>
+
+</div>
+
+<h3>History</h3>
+<div id="history"></div>
+
+<script>
+"use strict";
+
+
+/*
+ * ============================================================
+ * STORAGE
+ * ============================================================
+ */
+
+const HISTORY_STORAGE_KEY =
+  "mathPracticeHistory";
+
+const SETTINGS_STORAGE_KEY =
+  "mathPracticeSettings";
+
+const DEFAULT_MAX_NUMBER = 2026;
+
+
+/*
+ * ============================================================
+ * STATE
+ * ============================================================
+ */
+
+let history = loadHistory();
+
+let settings = loadSettings();
+
+let currentQuestion = null;
+
+let questionStartedAt = 0;
+let gameStartedAt = 0;
+
+let playTimer = null;
+
+let playing = false;
+let pausedAfterWrong = false;
+
+
+/*
+ * ============================================================
+ * ELEMENTS
+ * ============================================================
+ */
+
+const questionEl =
+  document.getElementById("question");
+
+const answerEl =
+  document.getElementById("answer");
+
+const resultEl =
+  document.getElementById("result");
+
+const solutionEl =
+  document.getElementById("solution");
+
+const correctEl =
+  document.getElementById("correct");
+
+const falseEl =
+  document.getElementById("false");
+
+const playtimeEl =
+  document.getElementById("playtime");
+
+const averageTimeEl =
+  document.getElementById("averageTime");
+
+const averageLast10El =
+  document.getElementById("averageLast10");
+
+const historyEl =
+  document.getElementById("history");
+
+const startButton =
+  document.getElementById("start");
+
+const continueButton =
+  document.getElementById("continue");
+
+const profileButton =
+  document.getElementById("profile");
+
+const profilePanel =
+  document.getElementById("profilePanel");
+
+const maxNumberInput =
+  document.getElementById("maxNumber");
+
+const saveSettingsButton =
+  document.getElementById("saveSettings");
+
+const settingsMessage =
+  document.getElementById("settingsMessage");
+
+const exportButton =
+  document.getElementById("exportHistory");
+
+const importButton =
+  document.getElementById("importHistory");
+
+const importFile =
+  document.getElementById("importFile");
+
+const deleteButton =
+  document.getElementById("deleteHistory");
+
+
+/*
+ * ============================================================
+ * HISTORY STORAGE
+ * ============================================================
+ */
+
+function loadHistory() {
+  try {
+    const saved =
+      localStorage.getItem(
+        HISTORY_STORAGE_KEY
+      );
+
+    if (!saved) {
+      return [];
+    }
+
+    const parsed =
+      JSON.parse(saved);
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
+
+  } catch (error) {
+    return [];
+  }
+}
+
+
+function saveHistory() {
+  localStorage.setItem(
+    HISTORY_STORAGE_KEY,
+    JSON.stringify(history)
+  );
+}
+
+
+/*
+ * ============================================================
+ * SETTINGS STORAGE
+ * ============================================================
+ */
+
+function loadSettings() {
+  try {
+    const saved =
+      localStorage.getItem(
+        SETTINGS_STORAGE_KEY
+      );
+
+    if (!saved) {
+      return {
+        maxNumber: DEFAULT_MAX_NUMBER
+      };
+    }
+
+    const parsed =
+      JSON.parse(saved);
+
+    let maxNumber =
+      Number(parsed.maxNumber);
+
+    if (
+      !Number.isFinite(maxNumber) ||
+      maxNumber < 1
+    ) {
+      maxNumber =
+        DEFAULT_MAX_NUMBER;
+    }
+
+    /*
+     * Never allow a value above 2026.
+     */
+    maxNumber =
+      Math.min(
+        Math.floor(maxNumber),
+        2026
+      );
+
+    return {
+      maxNumber
+    };
+
+  } catch (error) {
+
+    return {
+      maxNumber: DEFAULT_MAX_NUMBER
+    };
+  }
+}
+
+
+function saveSettings() {
+  localStorage.setItem(
+    SETTINGS_STORAGE_KEY,
+    JSON.stringify(settings)
+  );
+}
+
+
+/*
+ * ============================================================
+ * LOAD SAVED SETTINGS INTO PROFILE
+ * ============================================================
+ */
+
+maxNumberInput.value =
+  settings.maxNumber;
+
+
+/*
+ * ============================================================
+ * QUESTIONS
+ * ============================================================
+ */
+
+function randomInt(max) {
+  return Math.floor(
+    Math.random() * (max + 1)
+  );
+}
+
+
+function makeQuestion() {
+
+  /*
+   * Both numbers are generated between
+   * 0 and the user's selected maximum.
+   */
+  let a =
+    randomInt(settings.maxNumber);
+
+  let b =
+    randomInt(settings.maxNumber);
+
+  const operator =
+    Math.random() < 0.5
+      ? "+"
+      : "-";
+
+
+  /*
+   * Keep subtraction answers non-negative.
+   */
+  if (
+    operator === "-" &&
+    b > a
+  ) {
+    [a, b] = [b, a];
+  }
+
+
+  const correctAnswer =
+    operator === "+"
+      ? a + b
+      : a - b;
+
+
+  return {
+    a,
+    b,
+    operator,
+    correctAnswer
+  };
+}
+
+
+/*
+ * ============================================================
+ * START / RESTART
+ * ============================================================
+ */
+
+function startGame() {
+
+  playing = true;
+
+  pausedAfterWrong = false;
+
+  gameStartedAt =
+    performance.now();
+
+  startButton.textContent =
+    "Restart";
+
+  answerEl.disabled = false;
+
+  continueButton.hidden =
+    true;
+
+  resultEl.textContent =
+    "";
+
+  solutionEl.textContent =
+    "";
+
+  clearInterval(playTimer);
+
+  playTimer =
+    setInterval(
+      updatePlaytime,
+      100
+    );
+
+  showQuestion();
+
+  updateStats();
+}
+
+
+/*
+ * ============================================================
+ * SHOW QUESTION
+ * ============================================================
+ */
+
+function showQuestion() {
+
+  currentQuestion =
+    makeQuestion();
+
+  questionEl.textContent =
+    `${currentQuestion.a} ${currentQuestion.operator} ${currentQuestion.b} = ?`;
+
+  answerEl.value =
+    "";
+
+  answerEl.disabled =
+    false;
+
+  resultEl.textContent =
+    "";
+
+  solutionEl.textContent =
+    "";
+
+  continueButton.hidden =
+    true;
+
+  answerEl.focus();
+
+  questionStartedAt =
+    performance.now();
+}
+
+
+/*
+ * ============================================================
+ * SUBMIT ANSWER
+ * ============================================================
+ */
+
+function submitAnswer() {
+
+  if (
+    !playing ||
+    pausedAfterWrong
+  ) {
+    return;
+  }
+
+  const raw =
+    answerEl.value.trim();
+
+  if (raw === "") {
+    return;
+  }
+
+  const userAnswer =
+    Number(raw);
+
+  const answerTime =
+    (
+      performance.now() -
+      questionStartedAt
+    ) / 1000;
+
+  const isCorrect =
+    userAnswer ===
+    currentQuestion.correctAnswer;
+
+
+  /*
+   * Save question to history.
+   */
+  history.push({
+
+    timestamp:
+      Date.now(),
+
+    question:
+      `${currentQuestion.a} ${currentQuestion.operator} ${currentQuestion.b}`,
+
+    a:
+      currentQuestion.a,
+
+    b:
+      currentQuestion.b,
+
+    operator:
+      currentQuestion.operator,
+
+    correctAnswer:
+      currentQuestion.correctAnswer,
+
+    userAnswer,
+
+    correct:
+      isCorrect,
+
+    answerTime
+  });
+
+
+  saveHistory();
+
+  updateStats();
+
+  renderHistory();
+
+
+  /*
+   * Correct:
+   * automatically continue.
+   */
+  if (isCorrect) {
+
+    resultEl.textContent =
+      "Correct!";
+
+    setTimeout(() => {
+
+      if (
+        playing &&
+        !pausedAfterWrong
+      ) {
+        showQuestion();
+      }
+
+    }, 350);
+
+    return;
+  }
+
+
+  /*
+   * Wrong:
+   * pause until Continue is pressed.
+   */
+  pausedAfterWrong =
+    true;
+
+  answerEl.disabled =
+    true;
+
+  resultEl.textContent =
+    "Incorrect.";
+
+  showSolution();
+
+  continueButton.hidden =
+    false;
+
+  continueButton.focus();
+}
+
+
+/*
+ * ============================================================
+ * SHOW SOLUTION
+ * ============================================================
+ */
+
+function showSolution() {
+
+  const {
+    a,
+    b,
+    operator,
+    correctAnswer
+  } = currentQuestion;
+
+
+  solutionEl.innerHTML = `
+
+    <p>
+      <strong>
+        Correct answer:
+        ${correctAnswer}
+      </strong>
+    </p>
+
+    <p>
+      ${a} ${operator} ${b}
+      =
+      ${correctAnswer}
+    </p>
+
+    <p>
+      Press Continue when you're ready.
+    </p>
+
+  `;
+}
+
+
+/*
+ * ============================================================
+ * CONTINUE
+ * ============================================================
+ */
+
+function continueGame() {
+
+  if (
+    !playing ||
+    !pausedAfterWrong
+  ) {
+    return;
+  }
+
+  pausedAfterWrong =
+    false;
+
+  showQuestion();
+}
+
+
+/*
+ * ============================================================
+ * PLAYTIME
+ * ============================================================
+ */
+
+function updatePlaytime() {
+
+  if (!playing) {
+    return;
+  }
+
+  /*
+   * The timer doesn't advance while
+   * the player is paused after a wrong answer.
+   */
+  if (pausedAfterWrong) {
+    return;
+  }
+
+  const seconds =
+    (
+      performance.now() -
+      gameStartedAt
+    ) / 1000;
+
+  playtimeEl.textContent =
+    formatTime(seconds);
+}
+
+
+function formatTime(seconds) {
+
+  if (seconds < 60) {
+
+    return (
+      seconds.toFixed(1) +
+      "s"
+    );
+  }
+
+
+  const minutes =
+    Math.floor(
+      seconds / 60
+    );
+
+  const remainingSeconds =
+    Math.floor(
+      seconds % 60
+    );
+
+
+  return (
+    minutes +
+    "m " +
+    remainingSeconds +
+    "s"
+  );
+}
+
+
+/*
+ * ============================================================
+ * STATISTICS
+ * ============================================================
+ */
+
+function updateStats() {
+
+  const correct =
+    history.filter(
+      item =>
+        item.correct === true
+    ).length;
+
+  const incorrect =
+    history.length -
+    correct;
+
+
+  correctEl.textContent =
+    correct;
+
+  falseEl.textContent =
+    incorrect;
+
+
+  const allTimes =
+    history
+      .map(
+        item =>
+          Number(
+            item.answerTime
+          )
+      )
+      .filter(
+        Number.isFinite
+      );
+
+
+  const last10 =
+    allTimes.slice(-10);
+
+
+  const average =
+    allTimes.length
+
+      ? allTimes.reduce(
+          (sum, time) =>
+            sum + time,
+          0
+        ) / allTimes.length
+
+      : 0;
+
+
+  const average10 =
+    last10.length
+
+      ? last10.reduce(
+          (sum, time) =>
+            sum + time,
+          0
+        ) / last10.length
+
+      : 0;
+
+
+  averageTimeEl.textContent =
+    average.toFixed(2) +
+    "s";
+
+  averageLast10El.textContent =
+    average10.toFixed(2) +
+    "s";
+}
+
+
+/*
+ * ============================================================
+ * HISTORY DISPLAY
+ * ============================================================
+ */
+
+function renderHistory() {
+
+  if (
+    history.length === 0
+  ) {
+
+    historyEl.textContent =
+      "No history yet.";
+
+    return;
+  }
+
+
+  /*
+   * Display latest 20.
+   */
+  const recent =
+    history
+      .slice(-20)
+      .reverse();
+
+
+  historyEl.innerHTML =
+    recent
+      .map(item => {
+
+        const status =
+          item.correct
+            ? "Correct"
+            : "False";
+
+
+        return `
+          <div>
+            ${escapeHtml(item.question)}
+            =
+            ${escapeHtml(item.userAnswer)}
+            |
+            ${status}
+            |
+            ${Number(
+              item.answerTime
+            ).toFixed(2)}s
+          </div>
+        `;
+
+      })
+      .join("");
+}
+
+
+function escapeHtml(value) {
+
+  return String(value)
+
+    .replaceAll(
+      "&",
+      "&amp;"
+    )
+
+    .replaceAll(
+      "<",
+      "&lt;"
+    )
+
+    .replaceAll(
+      ">",
+      "&gt;"
+    )
+
+    .replaceAll(
+      '"',
+      "&quot;"
+    )
+
+    .replaceAll(
+      "'",
+      "&#039;"
+    );
+}
+
+
+/*
+ * ============================================================
+ * PROFILE
+ * ============================================================
+ */
+
+profileButton.addEventListener(
+  "click",
+  () => {
+
+    profilePanel.hidden =
+      !profilePanel.hidden;
+
+  }
+);
+
+
+/*
+ * ============================================================
+ * SAVE QUESTION SETTINGS
+ * ============================================================
+ */
+
+saveSettingsButton.addEventListener(
+  "click",
+  () => {
+
+    let value =
+      Number(
+        maxNumberInput.value
+      );
+
+
+    /*
+     * Make sure it is a valid integer.
+     */
+    if (
+      !Number.isFinite(value) ||
+      value < 1
+    ) {
+
+      alert(
+        "Please enter a number between 1 and 2026."
+      );
+
+      maxNumberInput.value =
+        settings.maxNumber;
+
+      return;
+    }
+
+
+    value =
+      Math.floor(value);
+
+
+    /*
+     * Hard maximum of 2026.
+     */
+    if (value > 2026) {
+
+      value = 2026;
+
+      maxNumberInput.value =
+        2026;
+    }
+
+
+    settings.maxNumber =
+      value;
+
+
+    saveSettings();
+
+
+    settingsMessage.textContent =
+      `Saved. New questions will use numbers from 0 to ${value}.`;
+
+
+    /*
+     * Remove the message after a few seconds.
+     */
+    setTimeout(() => {
+
+      settingsMessage.textContent =
+        "";
+
+    }, 3000);
+
+  }
+);
+
+
+/*
+ * ============================================================
+ * DELETE HISTORY
+ * ============================================================
+ */
+
+deleteButton.addEventListener(
+  "click",
+  () => {
+
+    const confirmed =
+      confirm(
+        "Are you sure you want to delete all of your history? This cannot be undone."
+      );
+
+
+    if (!confirmed) {
+      return;
+    }
+
+
+    history = [];
+
+    saveHistory();
+
+    updateStats();
+
+    renderHistory();
+
+  }
+);
+
+
+/*
+ * ============================================================
+ * EXPORT HISTORY
+ * ============================================================
+ */
+
+exportButton.addEventListener(
+  "click",
+  () => {
+
+    const json =
+      JSON.stringify(
+        history,
+        null,
+        2
+      );
+
+
+    const blob =
+      new Blob(
+        [json],
+        {
+          type:
+            "application/json"
+        }
+      );
+
+
+    const url =
+      URL.createObjectURL(
+        blob
+      );
+
+
+    const link =
+      document.createElement(
+        "a"
+      );
+
+
+    link.href =
+      url;
+
+    link.download =
+      "history.json";
+
+
+    document.body.appendChild(
+      link
+    );
+
+
+    link.click();
+
+
+    link.remove();
+
+
+    URL.revokeObjectURL(
+      url
+    );
+
+  }
+);
+
+
+/*
+ * ============================================================
+ * IMPORT HISTORY
+ * ============================================================
+ */
+
+importButton.addEventListener(
+  "click",
+  () => {
+
+    importFile.click();
+
+  }
+);
+
+
+importFile.addEventListener(
+  "change",
+  async () => {
+
+    const file =
+      importFile.files[0];
+
+
+    if (!file) {
+      return;
+    }
+
+
+    try {
+
+      const text =
+        await file.text();
+
+
+      const imported =
+        JSON.parse(text);
+
+
+      /*
+       * Basic validation.
+       */
+      if (
+        !Array.isArray(
+          imported
+        )
+      ) {
+
+        throw new Error(
+          "History must be an array."
+        );
+      }
+
+
+      for (
+        const item of imported
+      ) {
+
+        if (
+          typeof item !==
+            "object" ||
+          item === null
+        ) {
+
+          throw new Error(
+            "Invalid history entry."
+          );
+        }
+
+
+        if (
+          typeof item.correct !==
+            "boolean"
+        ) {
+
+          throw new Error(
+            "Invalid correct value."
+          );
+        }
+
+
+        if (
+          !Number.isFinite(
+            Number(
+              item.answerTime
+            )
+          )
+        ) {
+
+          throw new Error(
+            "Invalid answer time."
+          );
+        }
+
+      }
+
+
+      const confirmed =
+        confirm(
+          "Import this history and replace your current history?"
+        );
+
+
+      if (!confirmed) {
+
+        importFile.value =
+          "";
+
+        return;
+      }
+
+
+      history =
+        imported;
+
+
+      saveHistory();
+
+      updateStats();
+
+      renderHistory();
+
+
+      alert(
+        "Successfully imported " +
+        history.length +
+        " history entries."
+      );
+
+
+    } catch (error) {
+
+      alert(
+        "Could not import this file. Please make sure it is a valid history.json file."
+      );
+
+    }
+
+
+    /*
+     * Allows selecting the same file again.
+     */
+    importFile.value =
+      "";
+
+  }
+);
+
+
+/*
+ * ============================================================
+ * BUTTONS / KEYBOARD
+ * ============================================================
+ */
+
+startButton.addEventListener(
+  "click",
+  startGame
+);
+
+
+continueButton.addEventListener(
+  "click",
+  continueGame
+);
+
+
+answerEl.addEventListener(
+  "keydown",
+  event => {
+
+    if (
+      event.key ===
+      "Enter"
+    ) {
+
+      submitAnswer();
+
+    }
+
+  }
+);
+
+
+/*
+ * ============================================================
+ * INITIAL STATE
+ * ============================================================
+ */
+
+updateStats();
+
+renderHistory();
+
+</script>
+
+</body>
+</html>
