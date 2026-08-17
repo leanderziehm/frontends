@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guess the German City</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    
+    #map { flex: 1; width: 100%; }
+
+    .ui-panel {
+      background: #1e293b;
+      color: white;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 -4px 12px rgba(0,0,0,0.2);
+    }
+
+    .controls-row { display: flex; gap: 8px; align-items: center; }
+    
+    input[type="text"] {
+      flex: 1;
+      padding: 10px 14px;
+      border-radius: 6px;
+      border: 1px solid #475569;
+      background: #0f172a;
+      color: white;
+      font-size: 16px;
+    }
+
+    button {
+      padding: 10px 16px;
+      border-radius: 6px;
+      border: none;
+      background: #2563eb;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #1d4ed8; }
+    button.secondary { background: #475569; }
+    button.secondary:hover { background: #334155; }
+
+    .stats-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      color: #94a3b8;
+    }
+
+    .feedback {
+      font-weight: bold;
+      font-size: 16px;
+      height: 20px;
+    }
+    .feedback.correct { color: #4ade80; }
+    .feedback.wrong { color: #f87171; }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+
+  <div class="ui-panel">
+    <div class="feedback" id="feedback"></div>
+
+    <form class="controls-row" id="guessForm">
+      <input type="text" id="cityInput" placeholder="Enter German city name..." autocomplete="off" required />
+      <button type="submit" id="submitBtn">Guess</button>
+      <button type="button" class="secondary" id="nextBtn" style="display:none;">Next City</button>
+    </form>
+
+    <div class="stats-row">
+      <div id="scoreDisplay">Score: 0 Correct / 0 Wrong</div>
+      <div style="display:flex; gap:6px;">
+        <button class="secondary" style="padding: 4px 8px; font-size:12px;" onclick="exportHistory()">Export JSON</button>
+        <button class="secondary" style="padding: 4px 8px; font-size:12px;" onclick="document.getElementById('importFile').click()">Import JSON</button>
+        <input type="file" id="importFile" accept=".json" style="display:none" onchange="importHistory(event)">
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    const CITIES = [
+      { name: "Berlin", coords: [52.5200, 13.4050] },
+      { name: "Hamburg", coords: [53.5511, 9.9937] },
+      { name: "Munich", coords: [48.1351, 11.5820] },
+      { name: "Cologne", coords: [50.9375, 6.9603] },
+      { name: "Frankfurt", coords: [50.1109, 8.6821] },
+      { name: "Stuttgart", coords: [48.7758, 9.1829] },
+      { name: "Düsseldorf", coords: [51.2277, 6.7735] },
+      { name: "Leipzig", coords: [51.3397, 12.3731] },
+      { name: "Dortmund", coords: [51.5136, 7.4653] },
+      { name: "Essen", coords: [51.4556, 7.0116] },
+      { name: "Bremen", coords: [53.0793, 8.8017] },
+      { name: "Dresden", coords: [51.0504, 13.7373] },
+      { name: "Nuremberg", coords: [49.4521, 11.0767] },
+      { name: "Hanover", coords: [52.3759, 9.7320] }
+    ];
+
+    let map, marker;
+    let currentCity = null;
+    let history = JSON.parse(localStorage.getItem('city_game_history') || '[]');
+
+    // Initialize Map centered on Germany
+    map = L.map('map').setView([51.1657, 10.4515], 6);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    function updateScoreUI() {
+      const correct = history.filter(h => h.isCorrect).length;
+      const wrong = history.filter(h => !h.isCorrect).length;
+      document.getElementById('scoreDisplay').innerText = `Score: ${correct} Correct / ${wrong} Wrong`;
+    }
+
+    function loadRandomCity() {
+      // Pick random city
+      currentCity = CITIES[Math.floor(Math.random() * CITIES.length)];
+
+      // UI Reset
+      document.getElementById('feedback').innerText = '';
+      document.getElementById('feedback').className = 'feedback';
+      document.getElementById('cityInput').value = '';
+      document.getElementById('cityInput').disabled = false;
+      document.getElementById('submitBtn').style.display = 'block';
+      document.getElementById('nextBtn').style.display = 'none';
+
+      // Move marker & animate zoom to city
+      if (marker) map.removeLayer(marker);
+      
+      map.flyTo(currentCity.coords, 12, { duration: 1.5 });
+      
+      setTimeout(() => {
+        marker = L.marker(currentCity.coords).addTo(map);
+      }, 800);
+    }
+
+    // Handle Form Guess Submit
+    document.getElementById('guessForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('cityInput');
+      const guess = input.value.trim();
+      
+      // Basic normalization (handles cases like Dusseldorf vs Düsseldorf)
+      const clean = str => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const isCorrect = clean(guess) === clean(currentCity.name);
+
+      const feedback = document.getElementById('feedback');
+      if (isCorrect) {
+        feedback.innerText = `Correct! It is ${currentCity.name}.`;
+        feedback.className = 'feedback correct';
+      } else {
+        feedback.innerText = `Wrong! It was ${currentCity.name}.`;
+        feedback.className = 'feedback wrong';
+      }
+
+      // Lock input until next round
+      input.disabled = true;
+      document.getElementById('submitBtn').style.display = 'none';
+      document.getElementById('nextBtn').style.display = 'block';
+
+      // Save turn to history
+      history.push({
+        targetCity: currentCity.name,
+        userGuess: guess,
+        isCorrect: isCorrect,
+        timestamp: new Date().toISOString()
+      });
+      localStorage.setItem('city_game_history', JSON.stringify(history));
+      updateScoreUI();
+    });
+
+    document.getElementById('nextBtn').addEventListener('click', loadRandomCity);
+
+    // Export History
+    function exportHistory() {
+      const blob = new Blob([JSON.stringify(history, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `city_game_history_${Date.now()}.json`;
+      a.click();
+    }
+
+    // Import History
+    function importHistory(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const imported = JSON.parse(e.target.result);
+          if (Array.isArray(imported)) {
+            history = imported;
+            localStorage.setItem('city_game_history', JSON.stringify(history));
+            updateScoreUI();
+            alert('History imported successfully!');
+          }
+        } catch (err) {
+          alert('Invalid JSON file format.');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // Start game on load
+    updateScoreUI();
+    loadRandomCity();
+  </script>
+
+</body>
+</html>
