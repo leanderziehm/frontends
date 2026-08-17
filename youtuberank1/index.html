@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YouTube Rating Tracker</title>
+<style>
+/* Structural CSS only — no colors, fonts, or decorative styling */
+body {
+  display: flex;
+  flex-direction: column;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid;
+  padding: 12px;
+}
+
+.add-form-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.add-form-row input[type="text"],
+.add-form-row input[type="url"] {
+  flex: 1;
+  min-width: 180px;
+}
+
+#itemList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.item {
+  border: 1px solid;
+  padding: 10px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.item.dragging {
+  opacity: 0.4;
+}
+
+.item-drag-handle {
+  cursor: grab;
+  user-select: none;
+  padding: 4px;
+}
+
+.item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.item-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.item-thumb {
+  width: 120px;
+  height: 68px;
+  flex-shrink: 0;
+  object-fit: cover;
+}
+
+.item-title-link {
+  word-break: break-all;
+}
+
+.item-notes {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 40px;
+}
+
+.tag-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid;
+  padding: 2px 6px;
+}
+
+.tag-chip button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.item-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.menu-btn {
+  cursor: pointer;
+}
+
+.dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 10;
+  border: 1px solid;
+  padding: 8px;
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+}
+
+.dropdown-menu.open {
+  display: flex;
+}
+
+.tag-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.tag-suggestions button {
+  text-align: left;
+  cursor: pointer;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.empty-state {
+  padding: 20px;
+  text-align: center;
+  border: 1px dashed;
+}
+
+.rating-badge {
+  border: 1px solid;
+  padding: 2px 8px;
+  font-weight: bold;
+}
+
+.filter-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>YouTube Rating Tracker</h1>
+
+  <form class="add-form" id="addForm">
+    <div class="add-form-row">
+      <input type="url" id="ytUrlInput" placeholder="YouTube link (https://youtube.com/watch?v=...)" required>
+      <input type="number" id="ratingInput" min="5" max="10" step="1" placeholder="Rating (5-10)" required>
+    </div>
+    <div class="add-form-row">
+      <textarea id="notesInput" class="item-notes" placeholder="Notes (optional)"></textarea>
+    </div>
+    <div class="add-form-row">
+      <button type="submit">Add Item</button>
+    </div>
+  </form>
+
+  <div class="filter-row">
+    <label for="tagFilter">Filter by tag:</label>
+    <select id="tagFilter">
+      <option value="">All tags</option>
+    </select>
+    <label for="sortMode">Sort:</label>
+    <select id="sortMode">
+      <option value="manual">Manual order</option>
+      <option value="rating-desc">Rating (high to low)</option>
+      <option value="rating-asc">Rating (low to high)</option>
+    </select>
+  </div>
+
+  <div class="toolbar">
+    <button id="exportBtn" type="button">Export JSON</button>
+    <button id="importBtn" type="button">Import JSON</button>
+    <input type="file" id="importFile" accept="application/json" class="hidden">
+    <button id="clearAllBtn" type="button">Clear All</button>
+  </div>
+</header>
+
+<main>
+  <ul id="itemList"></ul>
+  <p id="emptyState" class="empty-state hidden">No items yet. Add a YouTube link above.</p>
+</main>
+
+<script>
+(function () {
+  const STORAGE_KEY = 'ytRatingTracker.items.v1';
+
+  /** @type {Array<{id:string, url:string, rating:number, notes:string, tags:string[], order:number}>} */
+  let items = [];
+
+  // ---------- Persistence ----------
+  function loadItems() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      items = raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      console.error('Failed to load items from localStorage', e);
+      items = [];
+    }
+  }
+
+  function saveItems() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  }
+
+  function uid() {
+    return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  }
+
+  // ---------- YouTube helpers ----------
+  function extractVideoId(url) {
+    try {
+      const u = new URL(url);
+      if (u.hostname.includes('youtu.be')) {
+        return u.pathname.slice(1);
+      }
+      if (u.hostname.includes('youtube.com')) {
+        if (u.pathname === '/watch') return u.searchParams.get('v');
+        if (u.pathname.startsWith('/embed/')) return u.pathname.split('/')[2];
+        if (u.pathname.startsWith('/shorts/')) return u.pathname.split('/')[2];
+      }
+    } catch (e) {
+      return null;
+    }
+    return null;
+  }
+
+  function thumbnailUrl(videoId) {
+    return videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : '';
+  }
+
+  // ---------- Tag helpers ----------
+  function getAllTags() {
+    const set = new Set();
+    items.forEach(it => (it.tags || []).forEach(t => set.add(t)));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }
+
+  function refreshTagFilterOptions() {
+    const select = document.getElementById('tagFilter');
+    const current = select.value;
+    select.innerHTML = '<option value="">All tags</option>';
+    getAllTags().forEach(tag => {
+      const opt = document.createElement('option');
+      opt.value = tag;
+      opt.textContent = tag;
+      select.appendChild(opt);
+    });
+    if (getAllTags().includes(current)) select.value = current;
+  }
+
+  // ---------- Rendering ----------
+  function getSortedItems() {
+    const mode = document.getElementById('sortMode').value;
+    const filterTag = document.getElementById('tagFilter').value;
+
+    let list = items.slice();
+    if (filterTag) {
+      list = list.filter(it => (it.tags || []).includes(filterTag));
+    }
+
+    if (mode === 'manual') {
+      list.sort((a, b) => a.order - b.order);
+    } else if (mode === 'rating-desc') {
+      list.sort((a, b) => b.rating - a.rating || a.order - b.order);
+    } else if (mode === 'rating-asc') {
+      list.sort((a, b) => a.rating - b.rating || a.order - b.order);
+    }
+    return list;
+  }
+
+  let openMenuId = null;
+  let dragSrcId = null;
+
+  function render() {
+    refreshTagFilterOptions();
+    const list = document.getElementById('itemList');
+    const emptyState = document.getElementById('emptyState');
+    list.innerHTML = '';
+
+    const sorted = getSortedItems();
+    const manualMode = document.getElementById('sortMode').value === 'manual';
+
+    if (sorted.length === 0) {
+      emptyState.classList.remove('hidden');
+    } else {
+      emptyState.classList.add('hidden');
+    }
+
+    sorted.forEach(item => {
+      list.appendChild(renderItem(item, manualMode));
+    });
+  }
+
+  function renderItem(item, manualMode) {
+    const li = document.createElement('li');
+    li.className = 'item';
+    li.dataset.id = item.id;
+    li.draggable = manualMode;
+
+    if (manualMode) {
+      li.addEventListener('dragstart', onDragStart);
+      li.addEventListener('dragover', onDragOver);
+      li.addEventListener('drop', onDrop);
+      li.addEventListener('dragend', onDragEnd);
+    }
+
+    const handle = document.createElement('div');
+    handle.className = 'item-drag-handle';
+    handle.textContent = manualMode ? '⠿' : '';
+    handle.title = 'Drag to reorder';
+    li.appendChild(handle);
+
+    const videoId = extractVideoId(item.url);
+    const thumb = document.createElement('img');
+    thumb.className = 'item-thumb';
+    thumb.src = thumbnailUrl(videoId);
+    thumb.alt = 'thumbnail';
+    thumb.onerror = () => { thumb.style.visibility = 'hidden'; };
+    li.appendChild(thumb);
+
+    const main = document.createElement('div');
+    main.className = 'item-main';
+
+    const row1 = document.createElement('div');
+    row1.className = 'item-row';
+
+    const link = document.createElement('a');
+    link.href = item.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.className = 'item-title-link';
+    link.textContent = item.url;
+    row1.appendChild(link);
+
+    const badge = document.createElement('span');
+    badge.className = 'rating-badge';
+    badge.textContent = item.rating;
+    row1.appendChild(badge);
+
+    main.appendChild(row1);
+
+    // Rating editor
+    const row2 = document.createElement('div');
+    row2.className = 'item-row';
+    const ratingLabel = document.createElement('label');
+    ratingLabel.textContent = 'Rating:';
+    const ratingInput = document.createElement('input');
+    ratingInput.type = 'number';
+    ratingInput.min = '5';
+    ratingInput.max = '10';
+    ratingInput.step = '1';
+    ratingInput.value = item.rating;
+    ratingInput.addEventListener('change', () => {
+      let v = parseInt(ratingInput.value, 10);
+      if (isNaN(v)) v = 5;
+      v = Math.min(10, Math.max(5, v));
+      item.rating = v;
+      ratingInput.value = v;
+      saveItems();
+      render();
+    });
+    row2.appendChild(ratingLabel);
+    row2.appendChild(ratingInput);
+    main.appendChild(row2);
+
+    // Tags
+    const tagList = document.createElement('div');
+    tagList.className = 'tag-list';
+    (item.tags || []).forEach(tag => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      const tagText = document.createElement('span');
+      tagText.textContent = tag;
+      chip.appendChild(tagText);
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.textContent = '×';
+      removeBtn.title = 'Remove tag';
+      removeBtn.addEventListener('click', () => {
+        item.tags = item.tags.filter(t => t !== tag);
+        saveItems();
+        render();
+      });
+      chip.appendChild(removeBtn);
+      tagList.appendChild(chip);
+    });
+    main.appendChild(tagList);
+
+    // Notes
+    const notes = document.createElement('textarea');
+    notes.className = 'item-notes';
+    notes.placeholder = 'Notes...';
+    notes.value = item.notes || '';
+    let notesTimeout = null;
+    notes.addEventListener('input', () => {
+      clearTimeout(notesTimeout);
+      notesTimeout = setTimeout(() => {
+        item.notes = notes.value;
+        saveItems();
+      }, 300);
+    });
+    main.appendChild(notes);
+
+    li.appendChild(main);
+
+    // Actions (3 dots menu)
+    const actions = document.createElement('div');
+    actions.className = 'item-actions';
+
+    const menuBtn = document.createElement('button');
+    menuBtn.type = 'button';
+    menuBtn.className = 'menu-btn';
+    menuBtn.textContent = '⋮';
+    menuBtn.title = 'Options';
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'dropdown-menu';
+    if (openMenuId === item.id) dropdown.classList.add('open');
+
+    const tagSearchInput = document.createElement('input');
+    tagSearchInput.type = 'text';
+    tagSearchInput.placeholder = 'Search or create tag...';
+
+    const suggestions = document.createElement('div');
+    suggestions.className = 'tag-suggestions';
+
+    function renderSuggestions() {
+      const query = tagSearchInput.value.trim().toLowerCase();
+      suggestions.innerHTML = '';
+      const allTags = getAllTags();
+      const matches = allTags.filter(t => t.toLowerCase().includes(query) && !(item.tags || []).includes(t));
+
+      matches.forEach(tag => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = tag;
+        btn.addEventListener('click', () => {
+          addTagToItem(item, tag);
+          tagSearchInput.value = '';
+          renderSuggestions();
+          saveItems();
+          render();
+        });
+        suggestions.appendChild(btn);
+      });
+
+      if (query && !allTags.some(t => t.toLowerCase() === query)) {
+        const createBtn = document.createElement('button');
+        createBtn.type = 'button';
+        createBtn.textContent = `+ Create "${tagSearchInput.value.trim()}"`;
+        createBtn.addEventListener('click', () => {
+          addTagToItem(item, tagSearchInput.value.trim());
+          tagSearchInput.value = '';
+          renderSuggestions();
+          saveItems();
+          render();
+        });
+        suggestions.appendChild(createBtn);
+      }
+    }
+
+    tagSearchInput.addEventListener('input', renderSuggestions);
+    tagSearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = tagSearchInput.value.trim();
+        if (val) {
+          addTagToItem(item, val);
+          tagSearchInput.value = '';
+          renderSuggestions();
+          saveItems();
+          render();
+        }
+      }
+    });
+
+    dropdown.appendChild(tagSearchInput);
+    dropdown.appendChild(suggestions);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = 'Delete item';
+    deleteBtn.addEventListener('click', () => {
+      if (confirm('Delete this item?')) {
+        items = items.filter(it => it.id !== item.id);
+        saveItems();
+        openMenuId = null;
+        render();
+      }
+    });
+    dropdown.appendChild(deleteBtn);
+
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openMenuId = openMenuId === item.id ? null : item.id;
+      render();
+      if (openMenuId === item.id) {
+        renderSuggestions();
+        setTimeout(() => tagSearchInput.focus(), 0);
+      }
+    });
+
+    actions.appendChild(menuBtn);
+    actions.appendChild(dropdown);
+    li.appendChild(actions);
+
+    return li;
+  }
+
+  function addTagToItem(item, tag) {
+    if (!item.tags) item.tags = [];
+    if (!item.tags.includes(tag)) {
+      item.tags.push(tag);
+    }
+  }
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (openMenuId && !e.target.closest('.item-actions')) {
+      openMenuId = null;
+      render();
+    }
+  });
+
+  // ---------- Drag and drop for manual sorting ----------
+  function onDragStart(e) {
+    dragSrcId = e.currentTarget.dataset.id;
+    e.currentTarget.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  function onDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  }
+
+  function onDrop(e) {
+    e.preventDefault();
+    const targetId = e.currentTarget.dataset.id;
+    if (!dragSrcId || dragSrcId === targetId) return;
+
+    const sorted = getSortedItems();
+    const srcIndex = sorted.findIndex(it => it.id === dragSrcId);
+    const targetIndex = sorted.findIndex(it => it.id === targetId);
+    if (srcIndex === -1 || targetIndex === -1) return;
+
+    const [moved] = sorted.splice(srcIndex, 1);
+    sorted.splice(targetIndex, 0, moved);
+
+    // Reassign order values based on new sequence
+    sorted.forEach((it, idx) => {
+      const original = items.find(i => i.id === it.id);
+      if (original) original.order = idx;
+    });
+
+    saveItems();
+    render();
+  }
+
+  function onDragEnd(e) {
+    e.currentTarget.classList.remove('dragging');
+    dragSrcId = null;
+  }
+
+  // ---------- Add form ----------
+  document.getElementById('addForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const urlInput = document.getElementById('ytUrlInput');
+    const ratingInput = document.getElementById('ratingInput');
+    const notesInput = document.getElementById('notesInput');
+
+    const url = urlInput.value.trim();
+    let rating = parseInt(ratingInput.value, 10);
+    if (isNaN(rating)) rating = 5;
+    rating = Math.min(10, Math.max(5, rating));
+
+    const maxOrder = items.reduce((max, it) => Math.max(max, it.order), -1);
+
+    items.push({
+      id: uid(),
+      url,
+      rating,
+      notes: notesInput.value.trim(),
+      tags: [],
+      order: maxOrder + 1
+    });
+
+    saveItems();
+    urlInput.value = '';
+    ratingInput.value = '';
+    notesInput.value = '';
+    render();
+  });
+
+  // ---------- Filter / sort controls ----------
+  document.getElementById('tagFilter').addEventListener('change', render);
+  document.getElementById('sortMode').addEventListener('change', render);
+
+  // ---------- Export ----------
+  document.getElementById('exportBtn').addEventListener('click', () => {
+    const dataStr = JSON.stringify(items, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `yt-rating-tracker-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  // ---------- Import ----------
+  const importFileInput = document.getElementById('importFile');
+  document.getElementById('importBtn').addEventListener('click', () => {
+    importFileInput.click();
+  });
+
+  importFileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const parsed = JSON.parse(evt.target.result);
+        if (!Array.isArray(parsed)) throw new Error('JSON root must be an array');
+
+        const valid = parsed.every(it =>
+          it && typeof it.url === 'string' && typeof it.rating === 'number'
+        );
+        if (!valid) throw new Error('Invalid item structure in JSON');
+
+        const replace = confirm('Click OK to REPLACE current data, or Cancel to MERGE with current data.');
+
+        const normalized = parsed.map((it, idx) => ({
+          id: it.id || uid(),
+          url: it.url,
+          rating: Math.min(10, Math.max(5, it.rating)),
+          notes: it.notes || '',
+          tags: Array.isArray(it.tags) ? it.tags : [],
+          order: typeof it.order === 'number' ? it.order : idx
+        }));
+
+        if (replace) {
+          items = normalized;
+        } else {
+          const maxOrder = items.reduce((max, it) => Math.max(max, it.order), -1);
+          normalized.forEach((it, idx) => {
+            it.id = uid();
+            it.order = maxOrder + 1 + idx;
+            items.push(it);
+          });
+        }
+
+        saveItems();
+        render();
+        alert('Import successful.');
+      } catch (err) {
+        alert('Failed to import JSON: ' + err.message);
+      } finally {
+        importFileInput.value = '';
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  // ---------- Clear all ----------
+  document.getElementById('clearAllBtn').addEventListener('click', () => {
+    if (confirm('Delete ALL items? This cannot be undone.')) {
+      items = [];
+      saveItems();
+      render();
+    }
+  });
+
+  // ---------- Init ----------
+  loadItems();
+  render();
+})();
+</script>
+</body>
+  </html>
