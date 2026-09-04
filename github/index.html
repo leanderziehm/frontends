@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitHub Sign-In Static App</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      background-color: #f6f8fa;
+      color: #24292f;
+    }
+    .card {
+      background: white;
+      padding: 2rem;
+      border-radius: 8px;
+      border: 1px solid #d0d7de;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      text-align: center;
+      max-width: 320px;
+      width: 100%;
+    }
+    img.avatar {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      margin-bottom: 1rem;
+    }
+    button, .btn {
+      background-color: #2da44e;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      margin-top: 1rem;
+    }
+    button:hover, .btn:hover {
+      background-color: #2c974b;
+    }
+    .btn-secondary {
+      background-color: #cf222e;
+    }
+    .btn-secondary:hover {
+      background-color: #a40e26;
+    }
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div id="login-view">
+      <h2>Welcome</h2>
+      <p>Sign in with your GitHub account to continue.</p>
+      <a id="login-btn" class="btn" href="#">Sign in with GitHub</a>
+    </div>
+
+    <div id="loading-view" class="hidden">
+      <p>Authenticating...</p>
+    </div>
+
+    <div id="profile-view" class="hidden">
+      <img id="avatar" class="avatar" src="" alt="Avatar">
+      <h2 id="username"></h2>
+      <p id="bio"></p>
+      <button id="logout-btn" class="btn btn-secondary">Sign Out</button>
+    </div>
+  </div>
+
+  <script>
+    // === CONFIGURATION ===
+    const CLIENT_ID = "YOUR_GITHUB_CLIENT_ID"; // Replace with your GitHub OAuth App Client ID
+    const WORKER_URL = "https://your-worker-name.subdomain.workers.dev"; // Replace with your Cloudflare Worker URL
+
+    // === DOM ELEMENTS ===
+    const loginView = document.getElementById("login-view");
+    const loadingView = document.getElementById("loading-view");
+    const profileView = document.getElementById("profile-view");
+    const loginBtn = document.getElementById("login-btn");
+    const logoutBtn = document.getElementById("logout-btn");
+
+    // Set GitHub OAuth Login URL
+    loginBtn.href = `https://github.com/login/oauth/authorize?client_id=${CLIENT_ID}&scope=read:user`;
+
+    // === MAIN APP LOGIC ===
+    async function init() {
+      const storedToken = localStorage.getItem("github_token");
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get("code");
+
+      if (storedToken) {
+        // User is already logged in
+        fetchUserProfile(storedToken);
+      } else if (code) {
+        // User was redirected back from GitHub with a temporary code
+        showView(loadingView);
+        
+        // Clean URL parameter so the code isn't left in the address bar
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        const token = await exchangeCodeForToken(code);
+        if (token) {
+          localStorage.setItem("github_token", token);
+          fetchUserProfile(token);
+        } else {
+          alert("Authentication failed. Please try again.");
+          showView(loginView);
+        }
+      } else {
+        // Default state: show login button
+        showView(loginView);
+      }
+    }
+
+    // Exchange temporary URL code for Access Token via Cloudflare Worker
+    async function exchangeCodeForToken(code) {
+      try {
+        const response = await fetch(WORKER_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code })
+        });
+        const data = await response.json();
+        return data.access_token || null;
+      } catch (err) {
+        console.error("Token exchange failed:", err);
+        return null;
+      }
+    }
+
+    // Fetch User Profile from GitHub's REST API
+    async function fetchUserProfile(token) {
+      showView(loadingView);
+      try {
+        const res = await fetch("https://api.github.com/user", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (res.status === 401) {
+          // Token expired or revoked
+          logout();
+          return;
+        }
+
+        const user = await res.json();
+        renderProfile(user);
+      } catch (err) {
+        console.error("Failed to fetch user profile:", err);
+        showView(loginView);
+      }
+    }
+
+    // Render User Data into HTML
+    function renderProfile(user) {
+      document.getElementById("avatar").src = user.avatar_url;
+      document.getElementById("username").innerText = user.login;
+      document.getElementById("bio").innerText = user.bio || "No bio available";
+      showView(profileView);
+    }
+
+    // Helper: Switch active visible container
+    function showView(view) {
+      loginView.classList.add("hidden");
+      loadingView.classList.add("hidden");
+      profileView.classList.add("hidden");
+      view.classList.remove("hidden");
+    }
+
+    // Clear session on logout
+    function logout() {
+      localStorage.removeItem("github_token");
+      showView(loginView);
+    }
+
+    logoutBtn.addEventListener("click", logout);
+
+    // Initialize application on page load
+    init();
+  </script>
+</body>
+</html>
