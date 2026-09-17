@@ -469,6 +469,12 @@ def build_html(pages: list[Page]) -> str:
     font-size: 12.5px;
     color: var(--text-secondary);
   }}
+  .search-input {{
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+}}
 </style>
 </head>
 <body>
@@ -486,6 +492,10 @@ def build_html(pages: list[Page]) -> str:
           <button data-layout="list">List</button>
         </div>
       </div>
+
+      <div class="toolbar-group">
+  <input type="text" id="search-input" placeholder="Search pages..." class="search-input">
+    </div>
 
       <div class="toolbar-group">
         <select id="col-select" class="col-select">
@@ -522,15 +532,16 @@ def build_html(pages: list[Page]) -> str:
     preview: true,
   }};
 
-  function render() {{
-    if (PAGES.length === 0) {{
-      itemsEl.innerHTML = `
-        <div class="empty">
-          <p>No pages found yet.</p>
-          <p class="empty-sub">Add a folder containing an <code>index.html</code> and regenerate.</p>
-        </div>`;
-      return;
-    }}
+function render() {
+  const pages = getFilteredPages();
+  if (pages.length === 0) {{
+    itemsEl.innerHTML = `
+      <div class="empty">
+        <p>No pages found yet.</p>
+        <p class="empty-sub">Add a folder containing an <code>index.html</code> and regenerate.</p>
+      </div>`;
+    return;
+  }}
 
     itemsEl.innerHTML = PAGES.map(p => `
       <a class="card" href="${{p.url}}" style="--accent:${{p.accent}}" target="_blank" rel="noopener">
@@ -579,6 +590,22 @@ def build_html(pages: list[Page]) -> str:
     render();
     applyLayoutClasses();
   }});
+
+    const searchInput = document.getElementById("search-input");
+state.query = "";
+
+function getFilteredPages() {{
+  const q = state.query.trim().toLowerCase();
+  if (!q) return PAGES;
+  return PAGES.filter(p =>
+    p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q)
+  );
+}}
+
+searchInput.addEventListener("input", () => {
+  state.query = searchInput.value;
+  render();
+});
 
   render();
   applyLayoutClasses();
