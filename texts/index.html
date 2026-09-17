@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Text Groups</title>
+
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        #groups {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin: 20px 0;
+        }
+
+        .group {
+            border: 1px solid #ccc;
+            border-radius: 999px;
+            padding: 8px 14px;
+            background: #fff;
+        }
+
+        .group.active {
+            background: #222;
+            color: #fff;
+        }
+
+        #status {
+            margin: 15px 0;
+            color: #666;
+        }
+
+        #actions {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 500px;
+            box-sizing: border-box;
+            font-family: monospace;
+            padding: 10px;
+        }
+    </style>
+
+</head>
+
+<body>
+
+    <h1>Text Groups</h1>
+
+    <div id="status">Loading...</div>
+
+    <div id="groups"></div>
+
+    <div id="actions">
+        <button id="copyButton">Copy</button>
+        <button id="downloadButton">Download TXT</button>
+        <button id="refreshButton">Fetch New Data</button>
+    </div>
+    <label style="display:block;margin:10px 0;">
+        <input type="checkbox" id="strictMode"> Strict (exclude matches that also match another rule)
+    </label>
+    <textarea id="output" readonly>Loading...</textarea>
+
+    <script>
+        const API_URL =
+            "https://todo-api.leanderziehm.com/texts?per_page=99999999999";
+
+        /*
+         * ============================================================
+         * ADD YOUR GROUPS HERE
+         * ============================================================
+         *
+         * Each group needs:
+         *   name  -> name shown in the navigation
+         *   regex -> regex used to find matching data
+         *
+         * The "g" flag is required.
+         */
+
+        const GROUPS = [
+            {
+                name: "GitHub",
+                regex:
+                    /https?:\/\/(?:www\.)?github\.com\/[^\s|]+/gi
+            },
+            {
+                name: "YouTube Video",
+                regex:
+                    /https?:\/\/(?:www.)?(?:youtube.com\/(?:watch?(?:[^\s|]*?&)?v=|embed\/)|youtu.be\/)[^\s|]+/gi
+            },
+            {
+                name: "YouTube Channel",
+                regex:
+                    /https?:\/\/(?:www.)?youtube.com\/(?:@[\w.-]+|channel\/[\w-]+|c\/[\w.-]+|user\/[\w.-]+)(?:\/[^\s|?]*)?/gi
+            },
+            {
+                name: "YouTube Playlist",
+                regex:
+                    /https?:\/\/(?:www.)?youtube.com\/playlist?[^\s|]*list=[^\s|&]+[^\s|]*/gi
+            },
+            {
+                name: "https",
+                excludeFromStrict: true,
+                regex:
+                    /https:\/\/.*/gi
+            },
+            {
+                name: "http",
+                regex:
+                    /http:\/\/.*/gi
+            },
+            {
+                name: "music",
+                regex:
+                    /music:.*/gi
+            },
+            {
+                name: "todo",
+                regex:
+                    /todo:.*/gi
+            },
+            {
+                name: "all",
+                excludeFromStrict: true,
+                regex:
+                    /.*/gi
+            }
+        ];
+
+
+
+
+
+        const CACHE_KEY = "text-group-viewer-data";
+
+        let texts = [];
+        let currentGroup = 0;
+
+
+        /*
+         * ------------------------------------------------------------
+         * Cache
+         * ------------------------------------------------------------
+         */
+
+        function saveCache(data) {
+            localStorage.setItem(
+                CACHE_KEY,
+                JSON.stringify({
+                    fetchedAt: Date.now(),
+                    texts: data
+                })
+            );
+        }
+
+        function loadCache() {
+            try {
+                const cached = localStorage.getItem(CACHE_KEY);
+
+                if (!cached) {
+                    return null;
+                }
+
+                return JSON.parse(cached);
+            } catch {
+                return null;
+            }
+        }
+
+
+        /*
+         * ------------------------------------------------------------
+         * API
+         * ------------------------------------------------------------
+         */
+
+        async function fetchData() {
+            setStatus("Fetching new data...");
+
+            const response = await fetch(API_URL, {
+                method: "GET",
+                headers: {
+                    accept: "application/json"
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            saveCache(data);
+            texts = data;
+
+            updateCacheStatus(Date.now());
+            renderCurrentGroup();
+        }
+
+
+        /*
+         * ------------------------------------------------------------
+         * Status
+         * ------------------------------------------------------------
+         */
+
+        function setStatus(message) {
+            document.getElementById("status").textContent = message;
+        }
+
+        function updateCacheStatus(timestamp) {
+            const date = new Date(timestamp);
+
+            setStatus(
+                `Data Cached from ${date.toLocaleString()} — ` +
+                `Click "Fetch New Data" to refresh`
+            );
+        }
+
+
+        /*
+         * ------------------------------------------------------------
+         * Groups
+         * ------------------------------------------------------------
+         */
+
+        function renderGroups() {
+            const container = document.getElementById("groups");
+            container.innerHTML = "";
+
+            GROUPS.forEach((group, index) => {
+                const button = document.createElement("button");
+
+                button.className =
+                    "group" + (index === currentGroup ? " active" : "");
+
+                button.textContent = group.name;
+
+                button.addEventListener("click", () => {
+                    currentGroup = index;
+                    renderGroups();
+                    renderCurrentGroup();
+                });
+
+                container.appendChild(button);
+            });
+        }
+
+
+        /*
+         * ------------------------------------------------------------
+         * Matching
+         * ------------------------------------------------------------
+         */
+
+        function getMatches(group) {
+            const matches = [];
+            const strict = document.getElementById("strictMode").checked;
+
+            for (const item of texts) {
+                if (typeof item.text !== "string") {
+                    continue;
+                }
+
+                group.regex.lastIndex = 0;
+                const found = item.text.match(group.regex);
+
+                if (found) {
+                    for (const match of found) {
+                        if (strict && matchesOtherGroup(match, group)) {
+                            continue;
+                        }
+                        matches.push(match);
+                    }
+                }
+            }
+
+            return [...new Set(matches)];
+        }
+
+        function matchesOtherGroup(str, currentGroup) {
+            return GROUPS.some(g => {
+                if (g === currentGroup) return false;
+                if (g.excludeFromStrict) return false; // don't let these "claim" the string
+                g.regex.lastIndex = 0;
+                return g.regex.test(str);
+            });
+        }
+        /*
+         * ------------------------------------------------------------
+         * Display
+         * ------------------------------------------------------------
+         */
+
+        function renderCurrentGroup() {
+            if (!GROUPS.length) {
+                document.getElementById("output").value = "";
+                return;
+            }
+
+            const group = GROUPS[currentGroup];
+            const matches = getMatches(group);
+
+            document.getElementById("output").value =
+                matches.join("\n");
+
+            document.getElementById("copyButton").textContent =
+                `Copy (${matches.length})`;
+
+            document.getElementById("downloadButton").textContent =
+                `Download TXT (${matches.length})`;
+        }
+
+
+        /*
+         * ------------------------------------------------------------
+         * Copy
+         * ------------------------------------------------------------
+         */
+
+        document
+            .getElementById("copyButton")
+            .addEventListener("click", async () => {
+                const output = document.getElementById("output").value;
+
+                await navigator.clipboard.writeText(output);
+
+                const button = document.getElementById("copyButton");
+                const oldText = button.textContent;
+
+                button.textContent = "Copied!";
+
+                setTimeout(() => {
+                    button.textContent = oldText;
+                }, 1000);
+            });
+
+
+        /*
+         * ------------------------------------------------------------
+         * Download
+         * ------------------------------------------------------------
+         */
+
+        document
+            .getElementById("downloadButton")
+            .addEventListener("click", () => {
+                const group = GROUPS[currentGroup];
+                const output = document.getElementById("output").value;
+
+                const blob = new Blob([output], {
+                    type: "text/plain;charset=utf-8"
+                });
+
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+
+                link.href = url;
+                link.download =
+                    `${group.name.toLowerCase().replace(/\s+/g, "-")}.txt`;
+
+                link.click();
+
+                URL.revokeObjectURL(url);
+            });
+
+
+        /*
+         * ------------------------------------------------------------
+         * Manual refresh
+         * ------------------------------------------------------------
+         */
+
+        document
+            .getElementById("refreshButton")
+            .addEventListener("click", async () => {
+                try {
+                    await fetchData();
+                } catch (error) {
+                    setStatus(`Error: ${error.message}`);
+                }
+            });
+
+
+        /*
+         * ------------------------------------------------------------
+         * Startup
+         * ------------------------------------------------------------
+         *
+         * If cached data exists:
+         *   -> use it
+         *   -> DO NOT contact the API
+         *
+         * If no cached data exists:
+         *   -> fetch once
+         */
+
+        async function init() {
+            document
+                .getElementById("strictMode")
+                .addEventListener("change", renderCurrentGroup);
+            renderGroups();
+
+            const cached = loadCache();
+
+            if (cached && Array.isArray(cached.texts)) {
+                texts = cached.texts;
+
+                updateCacheStatus(cached.fetchedAt);
+                renderCurrentGroup();
+
+                return;
+            }
+
+            try {
+                await fetchData();
+            } catch (error) {
+                setStatus(`Error: ${error.message}`);
+                document.getElementById("output").value = "";
+            }
+        }
+
+        init();
+    </script>
+
+</body>
+
+</html>
