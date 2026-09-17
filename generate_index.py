@@ -532,7 +532,7 @@ def build_html(pages: list[Page]) -> str:
     preview: true,
   }};
 
-function render() {
+function render() {{
   const pages = getFilteredPages();
   if (pages.length === 0) {{
     itemsEl.innerHTML = `
