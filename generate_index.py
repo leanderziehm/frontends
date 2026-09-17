@@ -605,7 +605,7 @@ function getFilteredPages() {{
 searchInput.addEventListener("input", () => {{
   state.query = searchInput.value;
   render();
-});
+}]);
 
   render();
   applyLayoutClasses();
