@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live AES Encoder</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; font: 16px system-ui, sans-serif; }
+    main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; min-height: calc(100vh - 48px); }
+    textarea { width: 100%; min-height: 70vh; resize: vertical; padding: 16px; font: 14px/1.5 ui-monospace, monospace; }
+    @media (max-width: 700px) {
+      main { grid-template-columns: 1fr; }
+      textarea { min-height: 38vh; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <textarea id="raw" placeholder="Type or paste raw text here..." aria-label="Raw text"></textarea>
+    <textarea id="encrypted" placeholder="AES-GCM output appears here..." aria-label="AES encrypted output" readonly></textarea>
+  </main>
+
+  <script>
+    const raw = document.querySelector("#raw");
+    const encrypted = document.querySelector("#encrypted");
+    let keyPromise = crypto.subtle.generateKey(
+      { name: "AES-GCM", length: 256 },
+      true,
+      ["encrypt", "decrypt"]
+    );
+
+    const toBase64 = bytes =>
+      btoa(String.fromCharCode(...new Uint8Array(bytes)));
+
+    async function updateOutput() {
+      const text = raw.value;
+
+      if (!text) {
+        encrypted.value = "";
+        return;
+      }
+
+      try {
+        const key = await keyPromise;
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const ciphertext = await crypto.subtle.encrypt(
+          { name: "AES-GCM", iv },
+          key,
+          new TextEncoder().encode(text)
+        );
+        const rawKey = await crypto.subtle.exportKey("raw", key);
+
+        encrypted.value = JSON.stringify({
+          algorithm: "AES-256-GCM",
+          key: toBase64(rawKey),
+          iv: toBase64(iv),
+          ciphertext: toBase64(ciphertext)
+        }, null, 2);
+      } catch (error) {
+        encrypted.value = "Encryption failed: " + error.message;
+      }
+    }
+
+    raw.addEventListener("input", updateOutput);
+  </script>
+</body>
+</html>
