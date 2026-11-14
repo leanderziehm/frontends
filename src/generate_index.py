@@ -1,11 +1,107 @@
-<!DOCTYPE html>
+"""
+generate_index.py
+
+Scans the current directory tree for `index.html` files (i.e. individual
+frontend pages/projects) and generates a polished root-level `index.html`
+that links to each one — with live iframe previews and a grid/list toggle.
+
+Usage:
+    python generate_index.py
+"""
+
+from __future__ import annotations
+
+import json
+import urllib.parse
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+
+
+# EXCLUDED_DIRS = {
+#     ".git",
+#     ".github",
+#     "__pycache__",
+#     ".venv",
+#     "venv",
+#     "node_modules",
+#     "dist",
+#     "build",
+# }
+
+ACCENT_COLORS = [
+    "#6366f1",
+    "#8b5cf6",
+    "#ec4899",
+    "#f59e0b",
+    "#10b981",
+    "#06b6d4",
+    "#ef4444",
+]
+
+
+@dataclass(frozen=True)
+class Page:
+    name: str
+    url: str
+    accent: str
+
+
+def discover_pages(static_dir:Path) -> list[Page]:
+    """Find every index.html in the tree (excluding the generated root one)."""
+    found: list[tuple[str, str]] = []
+
+    for index in static_dir.rglob("index.html"):
+        print(index)
+        rel = index.relative_to(static_dir)
+
+        if rel == Path("index.html"):
+            continue
+
+        # if any(part in EXCLUDED_DIRS for part in rel.parts):
+            # continue
+
+        folder = rel.parent
+        name = folder.as_posix()
+        url = urllib.parse.quote(name) + "/"
+        found.append((name, url))
+
+    found.sort(key=lambda item: item[0].lower())
+
+    return [
+        Page(name=name, url=url, accent=ACCENT_COLORS[i % len(ACCENT_COLORS)])
+        for i, (name, url) in enumerate(found)
+    ]
+
+
+def humanize(name: str) -> str:
+    """Turn a folder path like 'my-cool-app' into 'My Cool App'."""
+    label = name.rsplit("/", 1)[-1]
+    label = label.replace("-", " ").replace("_", " ")
+    return label.strip().title() or name
+
+
+def build_html(pages: list[Page]) -> str:
+    count = len(pages)
+    count_label = "page" if count == 1 else "pages"
+    generated_at = datetime.now().strftime("%B %d, %Y at %H:%M")
+
+    pages_json = json.dumps(
+        [
+            {"name": humanize(p.name), "path": p.name, "url": p.url, "accent": p.accent}
+            for p in pages
+        ]
+    )
+
+    return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Project Index</title>
 <style>
-  :root {
+  :root {{
     --bg-1: #0f172a;
     --bg-2: #1e1b4b;
     --surface: rgba(255, 255, 255, 0.06);
@@ -14,15 +110,15 @@
     --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
     --radius: 16px;
-  }
+  }}
 
-  * {
+  * {{
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-  }
+  }}
 
-  body {
+  body {{
     font-family: "Segoe UI", "Inter", system-ui, -apple-system, sans-serif;
     min-height: 100vh;
     color: var(--text-primary);
@@ -32,20 +128,20 @@
       linear-gradient(160deg, var(--bg-1), var(--bg-2));
     background-attachment: fixed;
     padding: 48px 20px 80px;
-  }
+  }}
 
-  .page-wrap {
+  .page-wrap {{
     width: 100%;
     max-width: 64vw;
     margin: 0 auto;
-  }
+  }}
 
-  header {
+  header {{
     text-align: center;
     margin-bottom: 28px;
-  }
+  }}
 
-  .eyebrow {
+  .eyebrow {{
     display: inline-block;
     font-size: 12px;
     letter-spacing: 0.14em;
@@ -56,21 +152,21 @@
     padding: 6px 14px;
     border-radius: 999px;
     margin-bottom: 18px;
-  }
+  }}
 
-  h1 {
+  h1 {{
     font-size: clamp(28px, 5vw, 40px);
     font-weight: 700;
     letter-spacing: -0.02em;
     margin-bottom: 10px;
-  }
+  }}
 
-  .subtitle {
+  .subtitle {{
     color: var(--text-secondary);
     font-size: 15px;
-  }
+  }}
 
-  .toolbar {
+  .toolbar {{
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -81,33 +177,33 @@
     border-radius: 14px;
     padding: 12px 16px;
     margin-bottom: 24px;
-  }
+  }}
 
-  .toolbar-group {
+  .toolbar-group {{
     display: flex;
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
-  }
+  }}
 
-  .toolbar-label {
+  .toolbar-label {{
     font-size: 12px;
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.08em;
     margin-right: 4px;
-  }
+  }}
 
-  .seg {
+  .seg {{
     display: inline-flex;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 3px;
     gap: 2px;
-  }
+  }}
 
-  .seg button {
+  .seg button {{
     all: unset;
     cursor: pointer;
     font-size: 13px;
@@ -116,14 +212,14 @@
     padding: 6px 12px;
     border-radius: 7px;
     transition: background 0.15s ease, color 0.15s ease;
-  }
+  }}
 
-  .seg button.active {
+  .seg button.active {{
     background: #6366f1;
     color: #fff;
-  }
+  }}
 
-  .toggle-row {
+  .toggle-row {{
     display: flex;
     align-items: center;
     gap: 8px;
@@ -131,9 +227,9 @@
     color: var(--text-secondary);
     cursor: pointer;
     user-select: none;
-  }
+  }}
 
-  .switch {
+  .switch {{
     position: relative;
     width: 34px;
     height: 20px;
@@ -141,9 +237,9 @@
     background: rgba(255, 255, 255, 0.15);
     transition: background 0.15s ease;
     flex-shrink: 0;
-  }
+  }}
 
-  .switch::after {
+  .switch::after {{
     content: "";
     position: absolute;
     top: 2px;
@@ -153,17 +249,17 @@
     border-radius: 50%;
     background: #fff;
     transition: transform 0.15s ease;
-  }
+  }}
 
-  .toggle-row.on .switch {
+  .toggle-row.on .switch {{
     background: #6366f1;
-  }
+  }}
 
-  .toggle-row.on .switch::after {
+  .toggle-row.on .switch::after {{
     transform: translateX(14px);
-  }
+  }}
 
-  select.col-select {
+  select.col-select {{
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--border);
     color: var(--text-primary);
@@ -172,29 +268,29 @@
     padding: 6px 10px;
     border-radius: 8px;
     cursor: pointer;
-  }
+  }}
 
-  select.col-select:focus {
+  select.col-select:focus {{
     outline: 1px solid #6366f1;
-  }
+  }}
 
-  .items {
+  .items {{
     display: grid;
     gap: 24px;
-  }
+  }}
 
-  .items[data-cols="1"] { grid-template-columns: 1fr; }
-  .items[data-cols="2"] { grid-template-columns: repeat(2, 1fr); }
-  .items[data-cols="3"] { grid-template-columns: repeat(3, 1fr); }
+  .items[data-cols="1"] {{ grid-template-columns: 1fr; }}
+  .items[data-cols="2"] {{ grid-template-columns: repeat(2, 1fr); }}
+  .items[data-cols="3"] {{ grid-template-columns: repeat(3, 1fr); }}
 
-  @media (max-width: 720px) {
+  @media (max-width: 720px) {{
     .items[data-cols="2"],
-    .items[data-cols="3"] {
+    .items[data-cols="3"] {{
       grid-template-columns: 1fr;
-    }
-  }
+    }}
+  }}
 
-  .card {
+  .card {{
     --accent: #6366f1;
     position: relative;
     display: flex;
@@ -206,24 +302,24 @@
     color: var(--text-primary);
     overflow: hidden;
     transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
-  }
+  }}
 
-  .card:hover {
+  .card:hover {{
     background: var(--surface-hover);
     border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
     transform: translateY(-2px);
-  }
+  }}
 
-  .card-preview {
+  .card-preview {{
     position: relative;
     width: 100%;
     aspect-ratio: 16 / 10;
     background: #0b1020;
     border-bottom: 1px solid var(--border);
     overflow: hidden;
-  }
+  }}
 
-  .card-preview iframe {
+  .card-preview iframe {{
     width: 400%;
     height: 400%;
     transform: scale(0.25);
@@ -231,9 +327,9 @@
     border: none;
     pointer-events: none;
     background: #fff;
-  }
+  }}
 
-  .card-preview .preview-placeholder {
+  .card-preview .preview-placeholder {{
     position: absolute;
     inset: 0;
     display: flex;
@@ -243,9 +339,9 @@
     font-weight: 700;
     color: var(--bg-1);
     background: var(--accent);
-  }
+  }}
 
-  .card-preview .open-badge {
+  .card-preview .open-badge {{
     position: absolute;
     top: 8px;
     right: 8px;
@@ -258,133 +354,133 @@
     color: #fff;
     opacity: 0;
     transition: opacity 0.15s ease;
-  }
+  }}
 
-  .card:hover .open-badge {
+  .card:hover .open-badge {{
     opacity: 1;
-  }
+  }}
 
-  .card-info {
+  .card-info {{
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 12px 14px;
-  }
+  }}
 
-  .card-info::before {
+  .card-info::before {{
     content: "";
     width: 8px;
     height: 8px;
     border-radius: 50%;
     background: var(--accent);
     flex-shrink: 0;
-  }
+  }}
 
-  .card-body {
+  .card-body {{
     display: flex;
     flex-direction: column;
     min-width: 0;
     flex: 1;
-  }
+  }}
 
-  .card-title {
+  .card-title {{
     font-weight: 600;
     font-size: 15px;
-  }
+  }}
 
-  .card-path {
+  .card-path {{
     font-size: 12px;
     color: var(--text-secondary);
     font-family: "SFMono-Regular", Consolas, monospace;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
+  }}
 
-  .card-arrow {
+  .card-arrow {{
     flex-shrink: 0;
     color: var(--text-secondary);
     font-size: 18px;
     transition: transform 0.18s ease, color 0.18s ease;
-  }
+  }}
 
-  .card:hover .card-arrow {
+  .card:hover .card-arrow {{
     transform: translateX(4px);
     color: var(--text-primary);
-  }
+  }}
 
-  .items.list-mode {
+  .items.list-mode {{
     grid-template-columns: 1fr !important;
-  }
+  }}
 
-  .items.list-mode .card {
+  .items.list-mode .card {{
     flex-direction: row;
     align-items: center;
-  }
+  }}
 
-  .items.list-mode .card-preview {
+  .items.list-mode .card-preview {{
     width: 120px;
     aspect-ratio: auto;
     height: 76px;
     flex-shrink: 0;
     border-bottom: none;
     border-right: 1px solid var(--border);
-  }
+  }}
 
-  .items.list-mode .card-info {
+  .items.list-mode .card-info {{
     flex: 1;
-  }
+  }}
 
-  .items.list-mode .card-info::before {
+  .items.list-mode .card-info::before {{
     display: none;
-  }
+  }}
 
-  .items.no-preview .card-preview {
+  .items.no-preview .card-preview {{
     display: none;
-  }
+  }}
 
-  .empty {
+  .empty {{
     text-align: center;
     padding: 48px 24px;
     background: var(--surface);
     border: 1px dashed var(--border);
     border-radius: var(--radius);
     color: var(--text-secondary);
-  }
+  }}
 
-  .empty p {
+  .empty p {{
     margin-bottom: 6px;
-  }
+  }}
 
-  .empty-sub {
+  .empty-sub {{
     font-size: 13px;
-  }
+  }}
 
-  .empty code {
+  .empty code {{
     background: rgba(255, 255, 255, 0.08);
     padding: 2px 6px;
     border-radius: 4px;
     font-family: "SFMono-Regular", Consolas, monospace;
-  }
+  }}
 
-  footer {
+  footer {{
     text-align: center;
     margin-top: 40px;
     font-size: 12.5px;
     color: var(--text-secondary);
-  }
-  .search-input {
+  }}
+  .search-input {{
   padding: 6px 10px;
   border-radius: 6px;
   border: 1px solid #ccc;
   font-size: 14px;
-}
+}}
 </style>
 </head>
 <body>
   <div class="page-wrap">
     <header>
-      <span class="eyebrow">29 pages found</span>
+      <span class="eyebrow">{count} {count_label} found</span>
       <h1>Project Index</h1>
       <p class="subtitle">Every page discovered under this directory, ready to open.</p>
     </header>
@@ -420,60 +516,60 @@
 
     <main class="items" id="items" data-cols="2"></main>
 
-    <footer>Generated on September 17, 2026 at 22:09</footer>
+    <footer>Generated on {generated_at}</footer>
   </div>
 
 <script>
-  const PAGES = [{"name": "Audio", "path": "audio", "url": "audio/", "accent": "#6366f1"}, {"name": "Countdown", "path": "countdown", "url": "countdown/", "accent": "#8b5cf6"}, {"name": "Exam Ml Wlan", "path": "exam-ml-wlan", "url": "exam-ml-wlan/", "accent": "#ec4899"}, {"name": "Exam Mlwl", "path": "exam-mlwl", "url": "exam-mlwl/", "accent": "#f59e0b"}, {"name": "Extract Colors", "path": "extract-colors", "url": "extract-colors/", "accent": "#10b981"}, {"name": "Github", "path": "github", "url": "github/", "accent": "#06b6d4"}, {"name": "Habits", "path": "habits", "url": "habits/", "accent": "#ef4444"}, {"name": "Json Schema", "path": "json-schema", "url": "json-schema/", "accent": "#6366f1"}, {"name": "Keyboard Shortcuts", "path": "keyboard-shortcuts", "url": "keyboard-shortcuts/", "accent": "#8b5cf6"}, {"name": "Lifetimes", "path": "lifetimes", "url": "lifetimes/", "accent": "#ec4899"}, {"name": "Map", "path": "map", "url": "map/", "accent": "#f59e0b"}, {"name": "Map2", "path": "map2", "url": "map2/", "accent": "#10b981"}, {"name": "Math", "path": "math", "url": "math/", "accent": "#06b6d4"}, {"name": "Math2", "path": "math2", "url": "math2/", "accent": "#ef4444"}, {"name": "Math3", "path": "math3", "url": "math3/", "accent": "#6366f1"}, {"name": "Measure", "path": "measure", "url": "measure/", "accent": "#8b5cf6"}, {"name": "Mediawiki", "path": "mediawiki", "url": "mediawiki/", "accent": "#ec4899"}, {"name": "Mediawiki2", "path": "mediawiki2", "url": "mediawiki2/", "accent": "#f59e0b"}, {"name": "Mediawiki3", "path": "mediawiki3", "url": "mediawiki3/", "accent": "#10b981"}, {"name": "Mediawiki4", "path": "mediawiki4", "url": "mediawiki4/", "accent": "#06b6d4"}, {"name": "Musiclist", "path": "musiclist", "url": "musiclist/", "accent": "#ef4444"}, {"name": "Notes", "path": "notes", "url": "notes/", "accent": "#6366f1"}, {"name": "Previewhtml", "path": "previewHTML", "url": "previewHTML/", "accent": "#8b5cf6"}, {"name": "Prompting Helper", "path": "prompting-helper", "url": "prompting-helper/", "accent": "#ec4899"}, {"name": "Tasks", "path": "tasks", "url": "tasks/", "accent": "#f59e0b"}, {"name": "Ten Fingertyping", "path": "ten-fingertyping", "url": "ten-fingertyping/", "accent": "#10b981"}, {"name": "Texts", "path": "texts", "url": "texts/", "accent": "#06b6d4"}, {"name": "Typer", "path": "typer", "url": "typer/", "accent": "#ef4444"}, {"name": "Youtuberank1", "path": "youtuberank1", "url": "youtuberank1/", "accent": "#6366f1"}];
+  const PAGES = {pages_json};
   const itemsEl = document.getElementById("items");
   const colSelect = document.getElementById("col-select");
   const layoutSeg = document.getElementById("layout-seg");
   const previewToggle = document.getElementById("preview-toggle");
 
-  const state = {
+  const state = {{
     layout: "grid",
     cols: 3,
     preview: true,
-  };
+  }};
 
-function render() {
+function render() {{
   const pages = getFilteredPages();
-  if (pages.length === 0) {
+  if (pages.length === 0) {{
     itemsEl.innerHTML = `
       <div class="empty">
         <p>No pages found yet.</p>
         <p class="empty-sub">Add a folder containing an <code>index.html</code> and regenerate.</p>
       </div>`;
     return;
-  }
+  }}
 
     itemsEl.innerHTML = PAGES.map(p => `
-      <a class="card" href="${p.url}" style="--accent:${p.accent}" target="_blank" rel="noopener">
+      <a class="card" href="${{p.url}}" style="--accent:${{p.accent}}" target="_blank" rel="noopener">
         <span class="card-preview">
-          <span class="preview-placeholder">${(p.name[0] || "?").toUpperCase()}</span>
-          ${state.preview ? `<iframe src="${p.url}" loading="lazy" sandbox="allow-same-origin" title="${p.name} preview"></iframe>` : ""}
+          <span class="preview-placeholder">${{(p.name[0] || "?").toUpperCase()}}</span>
+          ${{state.preview ? `<iframe src="${{p.url}}" loading="lazy" sandbox="allow-same-origin" title="${{p.name}} preview"></iframe>` : ""}}
           <span class="open-badge">Open &rarr;</span>
         </span>
         <span class="card-info">
           <span class="card-body">
-            <span class="card-title">${p.name}</span>
-            <span class="card-path">/${p.url}</span>
+            <span class="card-title">${{p.name}}</span>
+            <span class="card-path">/${{p.url}}</span>
           </span>
           <span class="card-arrow">&rarr;</span>
         </span>
       </a>
     `).join("");
-  }
+  }}
 
-  function applyLayoutClasses() {
+  function applyLayoutClasses() {{
     itemsEl.classList.toggle("list-mode", state.layout === "list");
     itemsEl.classList.toggle("no-preview", !state.preview);
     itemsEl.dataset.cols = state.layout === "list" ? "1" : String(state.cols);
     colSelect.disabled = state.layout === "list";
     colSelect.style.opacity = state.layout === "list" ? 0.4 : 1;
-  }
+  }}
 
-  layoutSeg.addEventListener("click", (e) => {
+  layoutSeg.addEventListener("click", (e) => {{
     const btn = e.target.closest("button[data-layout]");
     if (!btn) return;
     state.layout = btn.dataset.layout;
@@ -481,38 +577,60 @@ function render() {
       b.classList.toggle("active", b === btn)
     );
     applyLayoutClasses();
-  });
+  }});
 
-  colSelect.addEventListener("change", () => {
+  colSelect.addEventListener("change", () => {{
     state.cols = Number(colSelect.value);
     applyLayoutClasses();
-  });
+  }});
 
-  previewToggle.addEventListener("click", () => {
+  previewToggle.addEventListener("click", () => {{
     state.preview = !state.preview;
     previewToggle.classList.toggle("on", state.preview);
     render();
     applyLayoutClasses();
-  });
+  }});
 
     const searchInput = document.getElementById("search-input");
 state.query = "";
 
-function getFilteredPages() {
+function getFilteredPages() {{
   const q = state.query.trim().toLowerCase();
   if (!q) return PAGES;
   return PAGES.filter(p =>
     p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q)
   );
-}
+}}
 
-searchInput.addEventListener("input", () => {
+searchInput.addEventListener("input", () => {{
   state.query = searchInput.value;
   render();
-});
+}});
 
   render();
   applyLayoutClasses();
 </script>
 </body>
 </html>
+"""
+
+
+def main(static_dir:Path = None, index_path:Path = None) -> None:
+    base_dir = Path(__file__).parent.parent
+    
+    if index_path is None:
+      index_path = base_dir / "static" / "index.html"
+
+    if static_dir is None:
+      static_dir = base_dir / "static" 
+    
+
+    print(static_dir)
+    pages = discover_pages(static_dir)
+    html = build_html(pages)
+    index_path.write_text(html, encoding="utf-8")
+    print(f"Generated {index_path} with {len(pages)} page(s) linked.")
+
+
+if __name__ == "__main__":
+    main()
